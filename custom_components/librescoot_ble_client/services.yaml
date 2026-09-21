@@ -1,0 +1,73 @@
+passkey_reply:
+  name: Send passkey
+  description: >-
+    Pairing helper — forward the 6-digit passkey shown on the scooter dashboard to the
+    ESPHome component's passkey_reply action during bonding.
+  fields:
+    pin:
+      name: PIN
+      description: >-
+        The 6-digit passkey shown on the scooter dashboard, leading zeros included. A text field
+        on purpose — a numeric input drops leading zeros as you type.
+      required: true
+      example: "012345"
+      selector:
+        text:
+    node:
+      name: Node
+      description: ESPHome node name — only needed if more than one device is configured.
+      required: false
+      example: librescoot-component-485934
+      selector:
+        text:
+
+reboot_scooter:
+  name: Restart scooter
+  description: >-
+    Restart the scooter to apply a firmware update that finished installing but is stuck
+    waiting for its reboot (the "OTA Reboot Required" problem sensor is on). Presses the ESP's
+    Reboot button.
+  fields:
+    node:
+      name: Node
+      description: ESPHome node name — only needed if more than one device is configured.
+      required: false
+      example: librescoot-component-485934
+      selector:
+        text:
+
+update:
+  name: Prepare / install firmware
+  description: >-
+    Point the ESP's OTA Source URL at Home Assistant's plain-HTTP byte listener (no TLS on the
+    bulk transfer, only applied while the ESP is in "HA relay" mode) and optionally start an
+    install. The scooter is two boards and reboots after installing either, so one call installs
+    exactly one board.
+  fields:
+    install:
+      name: Install
+      description: >-
+        On = trigger the install (the scooter verifies the SHA-256 and installs, then reboots).
+        Off = only point the byte source at Home Assistant.
+      default: false
+      selector:
+        boolean:
+    component:
+      name: Board
+      description: >-
+        Which board to install. "auto" uses whichever board currently reports an update (the
+        component offers only one at a time, in the correct order).
+      default: auto
+      selector:
+        select:
+          options:
+            - auto
+            - mdb
+            - dbc
+    node:
+      name: Node
+      description: ESPHome node name — only needed if more than one device is configured.
+      required: false
+      example: librescoot-component-485934
+      selector:
+        text:

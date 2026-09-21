@@ -1,0 +1,160 @@
+{
+  "config": {
+    "flow_title": "{name}",
+    "step": {
+      "confirm": {
+        "title": "Librescoot-BLE-Client",
+        "description": "Set up the discovered LibreScoot device \"{name}\"? Its entities are detected automatically; advanced settings (GitHub token, byte-serving host/port, channel) are in the integration's options afterwards."
+      },
+      "user": {
+        "title": "Librescoot-BLE-Client",
+        "description": "Enter the ESPHome node name of your librescoot_ble_client device (used for the pairing action). Everything else is auto-detected; tune it later in the options.",
+        "data": {
+          "node_name": "ESPHome node name (e.g. librescoot-component-485934)"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Librescoot-BLE-Client",
+        "description": "Home-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
+        "data": {
+          "github_repo": "GitHub repo (owner/name)",
+          "github_token": "GitHub token (optional, raises the rate limit)",
+          "ha_host": "Host/IP the ESP uses to reach HA's OTA byte listener",
+          "ha_port": "OTA byte-listener port (plain HTTP)",
+          "channel": "Default update channel",
+          "scooter_action": "Scooter"
+        }
+      },
+      "scooter": {
+        "title": "This ESP’s scooter",
+        "description": "{mac} — {status}. “Enter passkey (pair)” only appears when the scooter is actually asking for one.",
+        "data": {
+          "action": "Action"
+        }
+      },
+      "manual": {
+        "title": "Enter a scooter MAC",
+        "description": "Type the scooter's BLE MAC (AA:BB:CC:DD:EE:FF). Put it into the ESPHome YAML's `mac_address:` and reflash for the ESP to use it.",
+        "data": {
+          "mac": "Scooter BLE MAC"
+        }
+      },
+      "scan_result": {
+        "title": "Pick your scooter",
+        "description": "Found {count} scooter(s), nearest first. Your ESP's own scooter is always listed — even if the scan couldn't re-hear it (a connected/weak scooter often isn't caught in the short window). Pick one, scan again, or unbind this ESP's scooter.",
+        "data": {
+          "scooter": "Scooter (strongest signal first)"
+        }
+      },
+      "pair": {
+        "title": "Enter the pairing passkey",
+        "description": "The scooter dashboard shows a 6-digit passkey. Enter it here to finish bonding the ESP with the scooter.",
+        "data": {
+          "pin": "Passkey (6 digits)"
+        }
+      },
+      "unbind": {
+        "title": "Remove bond?",
+        "description": "Remove this ESP's bond to {mac}? The ESP forgets the scooter and re-pairs (you'll enter the passkey again) on the next connect. Your phone pairing is not affected. Submit to confirm."
+      },
+      "mac_note": {
+        "title": "Set this scooter in the YAML",
+        "description": "To use {mac}, put it into your ESPHome YAML's `mac_address:` (via `!secret`) and reflash. The ESP then connects to it and prompts for the pairing passkey."
+      }
+    },
+    "progress": {
+      "scanning": "Scanning for scooters… the ESP is briefly switched to scan mode (~18 s), then restored."
+    },
+    "error": {
+      "no_scooter_found": "No scooter adverts seen. Make sure the scooter is nearby and awake, then Scan again."
+    }
+  },
+  "issues": {
+    "pairing_required": {
+      "title": "Scooter detected but not paired ({node})",
+      "fix_flow": {
+        "step": {
+          "start": {
+            "title": "Pair the scooter ({node})",
+            "description": "The scooter configured for {node} is not paired with the ESP — its bond was lost (a firmware update can do this).\n\nScooter: {mac}\nIn range: {range}\nSignal (RSSI): {rssi}\n\nThe scooter must be unlocked and you need physical access to its dashboard, since the passkey is shown there. Choose “Start pairing” below: only then does the ESP connect and the scooter show a 6-digit passkey, which you'll enter on the next screen. Nothing is sent to the scooter until you press it.",
+            "menu_options": {
+              "pair": "Start pairing (the scooter will show a code)"
+            }
+          },
+          "pair": {
+            "title": "Enter the passkey",
+            "description": "Pairing was started on the ESP — the scooter dashboard shows a 6-digit passkey (signal: {rssi}).\n\nIt can take about 10–15 seconds for the code to appear after the scooter wakes — please wait for it. Then enter it here to finish bonding.",
+            "data": {
+              "pin": "Passkey (6 digits)"
+            }
+          },
+          "failed": {
+            "title": "Pairing didn't complete",
+            "description": "No connection was established for {node} — the code may have been wrong or the scooter went out of range ({rssi}). Submit to try again."
+          }
+        },
+        "progress": {
+          "verifying": "Finishing pairing… waiting for the encrypted connection to the scooter to come up."
+        }
+      }
+    },
+    "reboot_required": {
+      "title": "Scooter restart needed ({node})",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Restart the scooter",
+            "description": "A firmware update for {node} has finished installing but the scooter has been waiting for the reboot that applies it for over 20 minutes. Submit to restart the scooter now and finish the update."
+          }
+        }
+      }
+    }
+  },
+  "services": {
+    "passkey_reply": {
+      "name": "Send passkey",
+      "description": "Forward the 6-digit passkey shown on the scooter dashboard to the ESPHome component during pairing.",
+      "fields": {
+        "pin": {
+          "name": "PIN",
+          "description": "The 6-digit passkey shown on the scooter dashboard."
+        },
+        "node": {
+          "name": "Node",
+          "description": "ESPHome node name — only needed if more than one device is configured."
+        }
+      }
+    },
+    "update": {
+      "name": "Prepare / install firmware",
+      "description": "Point the ESP's OTA source at Home Assistant's byte listener and optionally arm the install gate and start the install.",
+      "fields": {
+        "install": {
+          "name": "Install",
+          "description": "On = arm the gate and install; off = only prepare (stage-only)."
+        },
+        "node": {
+          "name": "Node",
+          "description": "ESPHome node name — only needed if more than one device is configured."
+        }
+      }
+    },
+    "reboot_scooter": {
+      "name": "Restart scooter",
+      "description": "Restart the scooter to apply a firmware update that finished installing but is stuck waiting for its reboot.",
+      "fields": {
+        "node": {
+          "name": "Node",
+          "description": "ESPHome node name — only needed if more than one device is configured."
+        }
+      }
+    }
+  }
+}
