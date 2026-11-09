@@ -141,7 +141,7 @@ class OtaProxy:
         return web.Response(text="ok")
 
     async def _handle_base(self, request: web.Request) -> web.Response:
-        """Return the release a .delta was generated against, as a bare tag.
+        """Return the release a .delta / .hdelta was generated against, as a bare tag.
 
         A .delta is a gzip'd tar whose metadata.json carries "old_artifact_name". The scooter never
         checks it — it assumes the running version is the base, applies the patch and only fails at
@@ -158,7 +158,7 @@ class OtaProxy:
         filename = request.match_info["filename"]
         if ".." in tag or ".." in filename or "/" in tag or "/" in filename:
             raise web.HTTPBadRequest
-        if not filename.endswith(".delta"):
+        if not filename.endswith((".delta", ".hdelta")):
             return web.Response(status=204)  # full images carry no base requirement
 
         key = f"{tag}/{filename}"

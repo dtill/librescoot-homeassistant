@@ -31,7 +31,9 @@ Assistant can help:
 - **Pairing made easy** — when the scooter is nearby but not paired, a Repair walks you through it:
   press *Start pairing*, type the code from the scooter's dashboard, done.
 - **Firmware updates** — Home Assistant fetches the release and hands it to the ESP over your home
-  network; the scooter's updates appear like any other update in Home Assistant.
+  network; the scooter's updates appear like any other update in Home Assistant. Before a delta
+  update starts — regular `.delta` or the smaller HDiffPatch `.hdelta` — it checks that the update
+  fits the version the scooter runs, so a mismatching one is refused before any transfer.
 - **Faster updates for scooters that are several releases behind** — several update steps are
   combined into one install and one reboot.
 - **Stuck after an update?** — if the scooter does not reboot on its own, a Repair offers to restart it.
