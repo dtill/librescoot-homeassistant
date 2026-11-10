@@ -7,7 +7,7 @@
 
 Home Assistant companion for the
 [Librescoot-BLE-Client ESPHome component](https://github.com/dtill/librescoot-esphome#mdb-nrf-ble-client):
-an ESP32-S3 next to your scooter that talks to it over Bluetooth, so lock/unlock, blinkers,
+an ESP32 next to your scooter that talks to it over Bluetooth, so lock/unlock, blinkers,
 seatbox, batteries, status, alarm and firmware updates show up in Home Assistant.
 
 It is made for **offline scooters** — scooters without an LTE contract — but works for every
@@ -18,9 +18,10 @@ the scooter is at home.
 ## What you need
 
 - an **unu Scooter Pro** running **Librescoot 1.4.0 or newer** with **nRF firmware v2.12 or newer**
-- an **ESP32-S3** board (16 MB flash, 8 MB PSRAM) flashed with the
+- an **ESP32** (classic) or **ESP32-S3** board flashed with the
   [Librescoot-BLE-Client ESPHome component](https://github.com/dtill/librescoot-esphome#mdb-nrf-ble-client)
-  and added to Home Assistant through the ESPHome integration
+  and added to Home Assistant through the ESPHome integration — on a classic, firmware updates
+  need this integration; an ESP32-S3 can also download them from GitHub itself
 - Home Assistant with HACS
 
 ## What this integration adds
@@ -31,11 +32,15 @@ Assistant can help:
 - **Pairing made easy** — when the scooter is nearby but not paired, a Repair walks you through it:
   press *Start pairing*, type the code from the scooter's dashboard, done.
 - **Firmware updates** — Home Assistant fetches the release and hands it to the ESP over your home
-  network; the scooter's updates appear like any other update in Home Assistant. Before a delta
-  update starts — regular `.delta` or the smaller HDiffPatch `.hdelta` — it checks that the update
-  fits the version the scooter runs, so a mismatching one is refused before any transfer.
+  network; the scooter's updates appear like any other update in Home Assistant. Each update uses
+  the smallest file that fits — the HDiffPatch `.hdelta` where the scooter supports it, else the
+  regular `.delta`. Before a delta update starts, it checks that the update fits the version the
+  scooter runs, so a mismatching one is refused before any transfer.
 - **Faster updates for scooters that are several releases behind** — several update steps are
-  combined into one install and one reboot.
+  combined into one install and one reboot. Newer scooters (nightly `20261109T030336` or later)
+  do this themselves: the ESP uploads each step and the scooter installs them together — no Home
+  Assistant needed. For older scooters Home Assistant merges the steps into one file; this needs a
+  Home Assistant host on x86_64, on other hosts the steps are installed one after another.
 - **Stuck after an update?** — if the scooter does not reboot on its own, a Repair offers to restart it.
 - **Find a new scooter** — a scan in the integration's options lists nearby scooters with their
   Bluetooth address for the ESPHome configuration.
