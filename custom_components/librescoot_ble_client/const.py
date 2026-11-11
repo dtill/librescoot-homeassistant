@@ -36,6 +36,7 @@ ENTITY_UPDATE_DBC = "OTA DBC Update"
 ENTITY_INSTALL_MDB = "OTA MDB Install"
 ENTITY_INSTALL_DBC = "OTA DBC Install"
 ENTITY_SOURCE_URL = "OTA Source URL"
+ENTITY_RELAY_REACHABLE = "OTA Source HA Relay"  # ESP-side check that it reaches this relay
 ENTITY_CHANNEL = "OTA channel"
 ENTITY_METHOD = "OTA Update Method"
 ENTITY_PASSKEY_REQUIRED = "BLE Passkey Required"

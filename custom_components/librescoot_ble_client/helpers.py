@@ -29,6 +29,7 @@ from .const import (
     ENTITY_RSSI,
     ENTITY_SCOOTER_MAC,
     ENTITY_SOURCE_URL,
+    ENTITY_RELAY_REACHABLE,
     ENTITY_INSTALL_DBC,
     ENTITY_INSTALL_MDB,
     ENTITY_UPDATE_DBC,
@@ -66,17 +67,31 @@ def _norm_mac(value: str) -> str:
     return re.sub(r"[^0-9a-f]", "", (value or "").lower())
 
 
+def _norm_name(value: str) -> str:
+    """Names compared without separators: node `librescoot-ble-apple-s3mini` and friendly name
+    `Librescoot-BLE-Apple-S3-Mini` are the same device."""
+    return re.sub(r"[^a-z0-9]", "", (value or "").lower())
+
+
 def find_esphome_device(hass: HomeAssistant, node_name: str, mac: str | None):
-    """Locate the ESPHome device for this node, by MAC connection then by name."""
+    """Locate the ESPHome device for this node: by MAC connection, then by the ESPHome entry's node
+    name, then by device name."""
     dev_reg = dr.async_get(hass)
     if mac:
         want = _norm_mac(mac)
         for device in dev_reg.devices.values():
             if any(_norm_mac(conn[1]) == want for conn in device.connections):
                 return device
-    target = slug(node_name)
+    target = _norm_name(node_name)
+    # The ESPHome config entry keeps the node name (`device_name`) even when the device shows its
+    # friendly name — the reliable link for an entry added by hand (no MAC stored).
+    for esp_entry in hass.config_entries.async_entries("esphome"):
+        if _norm_name(esp_entry.data.get("device_name", "")) == target:
+            devices = dr.async_entries_for_config_entry(dev_reg, esp_entry.entry_id)
+            if devices:
+                return devices[0]
     for device in dev_reg.devices.values():
-        if slug(device.name or "") == target or slug(device.name_by_user or "") == target:
+        if target in (_norm_name(device.name or ""), _norm_name(device.name_by_user or "")):
             return device
     return None
 
@@ -97,6 +112,7 @@ def resolve_entities(hass: HomeAssistant, node_name: str, mac: str | None) -> di
         ENTITY_INSTALL_MDB: "install_mdb",
         ENTITY_INSTALL_DBC: "install_dbc",
         ENTITY_SOURCE_URL: "source_url",
+        ENTITY_RELAY_REACHABLE: "relay_reachable",
         ENTITY_CHANNEL: "channel",
         ENTITY_METHOD: "method",
         ENTITY_PASSKEY_REQUIRED: "passkey_required",

@@ -69,6 +69,9 @@ class OtaProxy:
         self._chain_jobs: dict[str, asyncio.Task] = {}  # key -> running build
         self._chain_phase: dict[str, str] = {}  # key -> what the running build is doing
         self._chain_errors: dict[str, tuple[float, str]] = {}  # key -> (when, reason)
+        # Last request per secret (path segment 2) — shown in the options dialog so the user can see
+        # whether the ESP reaches the relay at all, and with which result. "?" = path without one.
+        self._seen: dict[str, tuple[float, str, int]] = {}  # secret -> (when, "GET /check", status)
 
     @property
     def port(self) -> int | None:
@@ -87,6 +90,27 @@ class OtaProxy:
         self._secrets.pop(secret, None)
         self._scans.pop(secret, None)
 
+    def last_seen(self, secret: str) -> tuple[float, str, int] | None:
+        """(when, "METHOD /kind", HTTP status) of the last request carrying this secret."""
+        return self._seen.get(secret)
+
+    def last_foreign(self) -> tuple[float, str, int] | None:
+        """The last request whose secret is not registered here (a stale or mistyped URL)."""
+        return self._seen.get("?")
+
+    @web.middleware
+    async def _track(self, request: web.Request, handler):
+        parts = request.path.split("/")
+        kind = f"{request.method} /{parts[1] if len(parts) > 1 else ''}"
+        key = parts[2] if len(parts) > 2 and parts[2] in self._secrets else "?"
+        try:
+            resp = await handler(request)
+        except web.HTTPException as exc:
+            self._seen[key] = (time.time(), kind, exc.status)
+            raise
+        self._seen[key] = (time.time(), kind, resp.status)
+        return resp
+
     def get_scan(self, secret: str) -> str:
         """The scooter list the ESP last POSTed for this device (empty if none yet)."""
         return self._scans.get(secret, "")
@@ -97,7 +121,7 @@ class OtaProxy:
     async def start(self, port: int) -> bool:
         if self._runner is not None:
             return True
-        app = web.Application()
+        app = web.Application(middlewares=[self._track])
         app.router.add_route("GET", "/ota/{secret}/{tag}/{filename}", self._handle)
         app.router.add_route("HEAD", "/ota/{secret}/{tag}/{filename}", self._handle)
         # The ESP POSTs its BLE-scan result here (so there's no HA entity for the raw list).

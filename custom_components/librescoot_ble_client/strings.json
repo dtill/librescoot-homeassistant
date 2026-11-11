@@ -22,7 +22,7 @@
     "step": {
       "init": {
         "title": "Librescoot-BLE-Client",
-        "description": "Home-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
+        "description": "**Connection**\n\n{status}\n\n**Settings**\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
         "data": {
           "github_repo": "GitHub repo (owner/name)",
           "github_token": "GitHub token (optional, raises the rate limit)",
