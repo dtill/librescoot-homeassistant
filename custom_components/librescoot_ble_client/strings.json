@@ -34,7 +34,9 @@
         "data": {
           "channel": "Default update channel",
           "scooter_action": "Scooter",
-          "ota_source": "OTA byte source (set on the ESP)"
+          "ota_source": "OTA byte source (set on the ESP)",
+          "alarm_code": "Alarm panel code (optional, digits; empty = no code)",
+          "alarm_disarm_disables": "Disarming also disables the scooter alarm"
         }
       },
       "scooter": {

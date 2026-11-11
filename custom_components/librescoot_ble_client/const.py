@@ -27,6 +27,8 @@ CONF_GITHUB_TOKEN = "github_token"
 CONF_HA_HOST = "ha_host"       # host/IP the ESP uses to reach HA's byte listener
 CONF_HA_PORT = "ha_port"       # port of the plain-HTTP byte listener
 CONF_CHANNEL = "channel"       # default channel (the ESP's own select is authoritative)
+CONF_ALARM_CODE = "alarm_code"                        # optional PIN for the alarm panel, checked in HA
+CONF_ALARM_DISARM_DISABLES = "alarm_disarm_disables"  # disarm also turns Alarm Enabled off
 
 DEFAULT_REPO = "librescoot/librescoot"
 DEFAULT_CHANNEL = "nightly"
@@ -46,6 +48,14 @@ ENTITY_UPDATE_DBC = "OTA DBC Update"
 ENTITY_INSTALL_MDB = "OTA MDB Install"
 ENTITY_INSTALL_DBC = "OTA DBC Install"
 ENTITY_SOURCE_URL = "OTA Source URL"
+# Alarm entities of the component, used by the integration's alarm control panel.
+ENTITY_ALARM_STATUS = "Alarm Status"
+ENTITY_ALARM_ENABLED = "Alarm Enabled"
+ENTITY_ALARM_ARMED = "Alarm Armed"
+ENTITY_ALARM_ARM = "Alarm Arm"
+ENTITY_ALARM_DISARM = "Alarm Disarm"
+ENTITY_ALARM_LAST_TRIGGER = "Alarm Last Trigger"
+ENTITY_ALARM_LAST_TRIGGER_TIME = "Alarm Last Trigger Time"
 ENTITY_RELAY_REACHABLE = "OTA Source HA Relay"  # ESP-side check that it reaches this relay
 ENTITY_CHANNEL = "OTA channel"
 ENTITY_METHOD = "OTA Update Method"

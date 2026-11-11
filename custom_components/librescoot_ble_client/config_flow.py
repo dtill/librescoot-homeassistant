@@ -23,6 +23,8 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
     CHANNELS,
+    CONF_ALARM_CODE,
+    CONF_ALARM_DISARM_DISABLES,
     CONF_CHANNEL,
     CONF_DISCOVERED_MAC,
     CONF_GITHUB_REPO,
@@ -258,6 +260,8 @@ class LibrescootOptionsFlow(OptionsFlow):
         ]
         schema = vol.Schema(
             {
+                vol.Optional(CONF_ALARM_CODE, default=opts.get(CONF_ALARM_CODE, "")): str,
+                vol.Required(CONF_ALARM_DISARM_DISABLES, default=opts.get(CONF_ALARM_DISARM_DISABLES, False)): bool,
                 vol.Required(CONF_CHANNEL, default=opts.get(CONF_CHANNEL, DEFAULT_CHANNEL)): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=CHANNELS)
                 ),
