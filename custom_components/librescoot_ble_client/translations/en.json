@@ -30,7 +30,7 @@
     "step": {
       "init": {
         "title": "Librescoot-BLE-Client",
-        "description": "**Connection**\n\n{status}\n\n**Settings**\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
+        "description": "{status}\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
         "data": {
           "channel": "Default update channel",
           "scooter_action": "Scooter",
@@ -145,6 +145,14 @@
           }
         }
       }
+    },
+    "esp_not_linked": {
+      "title": "ESP not found for {title}",
+      "description": "The Librescoot entry **{title}** cannot find its ESPHome device (node `{node}`, MAC `{mac}`). Without it there is no pairing Repair, no relay URL and no update steering.\n\nFix: add the ESP in the ESPHome integration, or remove this entry and add it again with the ESP's exact node name."
+    },
+    "relay_url_mismatch": {
+      "title": "{title} uses a different relay URL",
+      "description": "The ESP of **{title}** is in \"HA relay\" mode but uses\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nThe integration rewrites the URL whenever the ESP is reachable; if this stays, check that the ESP's OTA Source URL is not set by its YAML and that host/port in the Librescoot Relay entry are reachable from the ESP."
     }
   },
   "services": {

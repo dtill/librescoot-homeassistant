@@ -9,7 +9,7 @@
   "dependencies": ["http"],
   "after_dependencies": ["esphome"],
   "iot_class": "local_polling",
-  "requirements": [],
+  "requirements": ["icmplib==3.0.4"],
   "zeroconf": [
     {
       "type": "_esphomelib._tcp.local.",

@@ -11,6 +11,7 @@ integration never creates a second one — it only feeds and configures it.
 """
 from __future__ import annotations
 
+from datetime import timedelta
 import logging
 import os
 import secrets
@@ -19,13 +20,17 @@ import shutil
 import voluptuous as vol
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
-from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
 from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
-from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.event import (
+    async_call_later,
+    async_track_state_change_event,
+    async_track_time_interval,
+)
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
@@ -65,12 +70,15 @@ from .helpers import (
     resolve_entities,
     slug,
 )
-from .listener import CHAIN_DIR, OtaProxy
+from .entity import esp_device_info
+from .listener import CHAIN_DIR, SIGNAL_RELAY_STATS, STATS_INTERVAL_S, OtaProxy
+from .monitor import EspMonitor
 
 _LOGGER = logging.getLogger(__name__)
 
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+PLATFORMS = [Platform.BINARY_SENSOR, Platform.SENSOR]
 
 
 async def _relay_fields(hass: HomeAssistant) -> dict:
@@ -319,6 +327,17 @@ async def _setup_relay(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data[DOMAIN]["_listener"] = proxy
     hass.data[DOMAIN]["_relay_entry_id"] = entry.entry_id
 
+    @callback
+    def _tick(_now=None) -> None:
+        proxy.tick()
+
+    async def _cache(_now=None) -> None:
+        await proxy.refresh_cache_size()
+
+    entry.async_on_unload(async_track_time_interval(hass, _tick, timedelta(seconds=STATS_INTERVAL_S)))
+    entry.async_on_unload(async_track_time_interval(hass, _cache, timedelta(minutes=1)))
+    hass.async_create_task(_cache())
+
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,
         identifiers={(DOMAIN, RELAY_UNIQUE_ID)},
@@ -328,6 +347,7 @@ async def _setup_relay(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry_type=dr.DeviceEntryType.SERVICE,
     )
     ir.async_delete_issue(hass, DOMAIN, ISSUE_RELAY_MISSING)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _async_register_services(hass)
     # ESP entries refresh host/port/repo/token, register their secret and re-push their URL.
@@ -396,22 +416,32 @@ async def _setup_esp(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     _watch_pairing(hass, entry, ctx)
     _watch_reboot(hass, entry, ctx)
 
+    dr.async_get(hass).async_get_or_create(config_entry_id=entry.entry_id, **esp_device_info(entry))
+    ctx["monitor"] = EspMonitor(hass, entry, ctx)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    ctx["monitor"].async_start()
+
     entry.async_on_unload(entry.add_update_listener(_async_reload))
     _async_register_services(hass)
     return True
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
+        return False
     data = hass.data.get(DOMAIN, {})
     if is_relay(entry):
         proxy: OtaProxy | None = data.pop("_listener", None)
         data.pop("_relay_entry_id", None)
         if proxy is not None:
             await proxy.stop()
+        async_dispatcher_send(hass, SIGNAL_RELAY_STATS)  # ESP relay entities go unavailable
         return True
     ir.async_delete_issue(hass, DOMAIN, _pairing_issue_id(entry))
     ir.async_delete_issue(hass, DOMAIN, _reboot_issue_id(entry))
     ctx = data.pop(entry.entry_id, None)
+    if ctx and ctx.get("monitor") is not None:
+        ctx["monitor"].async_clear_issues()
     proxy = data.get("_listener")
     if ctx and proxy is not None:
         proxy.unregister(ctx["secret"])  # the listener itself belongs to the relay entry

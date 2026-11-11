@@ -31,6 +31,7 @@ from aiohttp import ClientTimeout, web
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from . import chain as chain_mod
 
@@ -50,6 +51,12 @@ _CHAIN_ERROR_TTL_S = 300  # a refused span is answered from memory this long bef
 _FULL_IMAGE_BYTES = 170_000_000  # a full MDB/DBC .mender, for the disk check of a fresh delta
 _PAYLOAD_BYTES = 540_000_000  # its data/0000.tar.gz unpacked (512 MiB)
 _TAG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+
+# One dispatcher signal for every relay-backed entity (ESP entries and the relay entry). Sent by
+# tick() every STATS_INTERVAL_S when something changed, and at once when a request's HTTP status
+# differs from the previous one — never per chunk.
+SIGNAL_RELAY_STATS = "librescoot_ble_client_relay_stats"
+STATS_INTERVAL_S = 10
 
 
 class OtaProxy:
@@ -72,6 +79,13 @@ class OtaProxy:
         # Last request per secret (path segment 2) — shown in the options dialog so the user can see
         # whether the ESP reaches the relay at all, and with which result. "?" = path without one.
         self._seen: dict[str, tuple[float, str, int]] = {}  # secret -> (when, "GET /check", status)
+        self._served: dict[str, int] = {}       # secret -> bytes streamed to that ESP since HA start
+        self._rate: dict[str, float] = {}       # secret -> B/s over the last STATS_INTERVAL_S
+        self._served_mark: dict[str, int] = {}  # secret -> bytes at the previous tick
+        self._chain_owner: dict[str, str] = {}  # chain key -> secret of the ESP that asked for it
+        self.github: dict[str, int | bool | None] = {}  # rate-limit headers of the last API call
+        self.cache_bytes: int | None = None     # size of the merged-bundle cache on disk
+        self._dirty = False
 
     @property
     def port(self) -> int | None:
@@ -106,10 +120,83 @@ class OtaProxy:
         try:
             resp = await handler(request)
         except web.HTTPException as exc:
-            self._seen[key] = (time.time(), kind, exc.status)
+            self._note(key, kind, exc.status)
             raise
-        self._seen[key] = (time.time(), kind, resp.status)
+        self._note(key, kind, resp.status)
         return resp
+
+    def _note(self, key: str, kind: str, status: int) -> None:
+        prev = self._seen.get(key)
+        self._seen[key] = (time.time(), kind, status)
+        if prev is None or prev[2] != status:
+            self._signal()  # a new outcome is news now; a repeat waits for the next tick
+        else:
+            self._dirty = True
+
+    def _signal(self) -> None:
+        self._dirty = False
+        async_dispatcher_send(self._hass, SIGNAL_RELAY_STATS)
+
+    # ---- stats read by the entities --------------------------------------------------
+    @property
+    def registered(self) -> int:
+        return len(self._secrets)
+
+    def served(self, secret: str) -> int:
+        return self._served.get(secret, 0)
+
+    def served_total(self) -> int:
+        return sum(self._served.values())
+
+    def rate(self, secret: str) -> float:
+        return self._rate.get(secret, 0.0)
+
+    def chain_status(self, secret: str) -> str:
+        """What the relay is doing with delta chains this ESP asked for."""
+        keys = [k for k, owner in self._chain_owner.items() if owner == secret]
+        for key in keys:
+            if (job := self._chain_jobs.get(key)) and not job.done():
+                return f"building {key}: {self._chain_phase.get(key, 'queued')}"
+        for key in reversed(keys):
+            if (err := self._chain_errors.get(key)) and time.monotonic() - err[0] < _CHAIN_ERROR_TTL_S:
+                return f"failed {key}: {err[1]}"[:255]
+            if (facts := self._chains.get(key)) and os.path.isfile(facts["path"]):
+                return f"ready {key}"
+        return "idle"
+
+    def tick(self) -> None:
+        """Every STATS_INTERVAL_S: transfer rates, cache size; signal if anything changed."""
+        changed = self._dirty
+        for secret in set(self._served) | set(self._rate):
+            done = self._served.get(secret, 0)
+            rate = (done - self._served_mark.get(secret, 0)) / STATS_INTERVAL_S
+            self._served_mark[secret] = done
+            if rate != self._rate.get(secret, 0.0):
+                self._rate[secret] = rate
+                changed = True
+        if any(not j.done() for j in self._chain_jobs.values()):
+            changed = True  # the build phase moves
+        if changed:
+            self._signal()
+
+    async def refresh_cache_size(self) -> None:
+        size = await self._hass.async_add_executor_job(_dir_size, self._chain_dir())
+        if size != self.cache_bytes:
+            self.cache_bytes = size
+            self._dirty = True
+
+    def _github_headers(self, up) -> None:
+        def num(name: str) -> int | None:
+            value = up.headers.get(name)
+            return int(value) if value and value.isdigit() else None
+        remaining = num("X-RateLimit-Remaining")
+        if remaining is not None:
+            self.github = {
+                "remaining": remaining,
+                "limit": num("X-RateLimit-Limit"),
+                "reset": num("X-RateLimit-Reset"),
+            }
+            self._dirty = True
 
     def get_scan(self, secret: str) -> str:
         """The scooter list the ESP last POSTed for this device (empty if none yet)."""
@@ -126,6 +213,8 @@ class OtaProxy:
         app = web.Application(middlewares=[self._track])
         app.router.add_route("GET", "/ota/{secret}/{tag}/{filename}", self._handle)
         app.router.add_route("HEAD", "/ota/{secret}/{tag}/{filename}", self._handle)
+        # The ESP's reachability probe: 204 for a known secret, 403 otherwise (was a 404 before).
+        app.router.add_route("HEAD", "/ota/{secret}", self._handle_probe)
         # The ESP POSTs its BLE-scan result here (so there's no HA entity for the raw list).
         app.router.add_route("POST", "/scan/{secret}", self._handle_scan)
         # Which release a .delta patches against — read here so a board without the memory to
@@ -157,6 +246,11 @@ class OtaProxy:
             await self._runner.cleanup()
             self._runner = None
             self._port = None
+
+    async def _handle_probe(self, request: web.Request) -> web.Response:
+        if request.match_info["secret"] not in self._secrets:
+            raise web.HTTPForbidden(text="bad token")
+        return web.Response(status=204)
 
     async def _handle_scan(self, request: web.Request) -> web.Response:
         secret = request.match_info["secret"]
@@ -245,6 +339,7 @@ class OtaProxy:
         session = async_get_clientsession(self._hass)
         try:
             async with session.get(api, headers=headers, timeout=ClientTimeout(total=30)) as up:
+                self._github_headers(up)
                 if up.status != 200:
                     _LOGGER.warning("update check: %s answered HTTP %s", api, up.status)
                     return web.Response(status=204)
@@ -289,6 +384,7 @@ class OtaProxy:
         session = async_get_clientsession(self._hass)
         try:
             async with session.get(api, headers=headers, timeout=ClientTimeout(total=30)) as up:
+                self._github_headers(up)
                 if up.status != 200:
                     _LOGGER.warning("release notes: %s answered HTTP %s", api, up.status)
                     return web.Response(status=204)
@@ -341,6 +437,7 @@ class OtaProxy:
             return web.Response(status=204)
 
         key = f"{comp}/{from_tag}/{to_tag}"
+        self._chain_owner[key] = request.match_info["secret"]
         if (facts := self._chains.get(key)) and os.path.isfile(facts["path"]):
             return web.Response(text=_chain_body(facts))
         if (job := self._chain_jobs.get(key)) and not job.done():
@@ -492,6 +589,7 @@ class OtaProxy:
             headers["Authorization"] = f"Bearer {info['token']}"
         session = async_get_clientsession(self._hass)
         async with session.get(url, headers=headers, timeout=ClientTimeout(total=60)) as up:
+            self._github_headers(up)
             if up.status != 200:
                 raise chain_mod.ChainError(f"release listing: HTTP {up.status}")
             releases = await up.json()
@@ -533,7 +631,12 @@ class OtaProxy:
             raise web.HTTPNotFound(text="chain not built")
         if filename != facts["name"]:
             raise web.HTTPNotFound(text="wrong bundle name")
-        return web.FileResponse(facts["path"], headers={"Accept-Ranges": "bytes"})
+        resp = web.FileResponse(facts["path"], headers={"Accept-Ranges": "bytes"})
+        await resp.prepare(request)  # sends the (ranged) body; prepared here so it can be counted
+        if request.method != "HEAD" and resp.content_length:
+            secret = request.match_info["secret"]
+            self._served[secret] = self._served.get(secret, 0) + resp.content_length
+        return resp
 
     async def _handle(self, request: web.Request) -> web.StreamResponse:
         info = self._secrets.get(request.match_info["secret"])
@@ -568,9 +671,11 @@ class OtaProxy:
                 resp.headers.setdefault("Accept-Ranges", "bytes")
                 await resp.prepare(request)
                 if request.method != "HEAD":
+                    secret = request.match_info["secret"]
                     async for chunk in up.content.iter_chunked(65536):
                         await resp.write(chunk)
                         sent += len(chunk)
+                        self._served[secret] = self._served.get(secret, 0) + len(chunk)
                 await resp.write_eof()
                 return resp
         except web.HTTPException:
@@ -611,6 +716,17 @@ def _delta_base_from_head(head: bytes) -> str:
     except Exception as err:  # noqa: BLE001 - a truncated or unexpected archive just means "unknown"
         _LOGGER.debug("delta base: could not parse archive head: %s", err)
     return ""
+
+
+def _dir_size(path: str) -> int:
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for name in files:
+            try:
+                total += os.path.getsize(os.path.join(root, name))
+            except OSError:
+                pass
+    return total
 
 
 def _ensure_dir(path: str) -> None:

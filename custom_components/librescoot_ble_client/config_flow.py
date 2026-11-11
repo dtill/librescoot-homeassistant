@@ -193,62 +193,26 @@ class LibrescootOptionsFlow(OptionsFlow):
         return "HA relay"
 
     def _connection_status(self) -> str:
-        """Markdown block for the options dialog: did HA find the ESP, which relay URL does HA hand
-        out, what does the ESP actually use, and has the ESP reached the relay."""
-        entry = self.config_entry
-        ents = self._ents()
-        lines: list[str] = []
-        if ents:
-            lines.append(f"✅ ESPHome device found ({len(ents)} entities of this component)")
-        else:
-            lines.append(
-                f"❌ ESPHome device **not found** — node `{entry.data[CONF_NODE]}`, "
-                f"MAC `{entry.data.get(CONF_MAC) or '—'}`. Add the ESP in the ESPHome integration, or "
-                "re-add this entry with the ESP's node name."
+        """One line for the options dialog; the details are entities of this entry's (HA) device."""
+        ctx = self.hass.data.get(DOMAIN, {}).get(self.config_entry.entry_id) or {}
+        mon = ctx.get("monitor")
+        if mon is None or mon.linked is None:
+            return "Status: checking…"
+        if not mon.linked:
+            return (
+                f"❌ ESPHome device not found (node `{self.config_entry.data[CONF_NODE]}`). Add the ESP in "
+                "the ESPHome integration, or re-add this entry with the ESP's node name."
             )
-
-        ctx = self.hass.data.get(DOMAIN, {}).get(entry.entry_id) or {}
+        parts = ["✅ ESP found", "✅ online" if mon.online else "❌ offline"]
+        if mon.byte_source == "HA relay":
+            parts.append("❌ URL differs from the relay" if mon.url_mismatch else "✅ relay URL")
+        elif mon.byte_source:
+            parts.append(f"bytes: {mon.byte_source}")
         proxy = self.hass.data.get(DOMAIN, {}).get("_listener")
-        want = (
-            f"http://{ctx['host']}:{proxy.port if proxy and proxy.port else ctx['port']}/ota/{ctx['secret']}"
-            if ctx.get("host") and ctx.get("secret")
-            else "—"
-        )
-        lines.append(f"Relay URL from HA: `{want}`")
-
-        def state(key: str) -> str | None:
-            eid = ents.get(key)
-            st = self.hass.states.get(eid) if eid else None
-            return st.state if st else None
-
-        mode = state("ota_source") or "?"
-        have = state("source_url") or "?"
-        if mode == "direct GitHub":
-            lines.append(f"ESP byte source: **direct GitHub** — the ESP ignores the relay URL (`{have}`)")
-        else:
-            mark = "✅" if have == want else "❌"
-            lines.append(f"ESP byte source: **{mode}**, URL on the ESP: {mark} `{have}`")
-            reach = state("relay_reachable")
-            if reach is not None:
-                lines.append(f"ESP reaches the relay: {'✅ yes' if reach == 'on' else '❌ no (' + reach + ')'}")
-
-        if proxy is None:
-            lines.append("❌ Relay listener is not running")
-        else:
-            seen = proxy.last_seen(ctx.get("secret", ""))
-            if seen:
-                ago = int(time.time() - seen[0])
-                lines.append(f"Last request from this ESP: {ago} s ago — `{seen[1]}` → HTTP {seen[2]}")
-            else:
-                lines.append("Last request from this ESP: none since Home Assistant started")
-            foreign = proxy.last_foreign()
-            if foreign:
-                ago = int(time.time() - foreign[0])
-                lines.append(
-                    f"⚠️ A request with an unknown or missing secret came in {ago} s ago "
-                    f"(`{foreign[1]}` → HTTP {foreign[2]}) — an ESP uses a stale or wrong URL"
-                )
-        return "\n\n".join(lines)
+        seen = proxy.last_seen(ctx.get("secret", "")) if proxy is not None else None
+        if seen:
+            parts.append(f"last relay request {int(time.time() - seen[0])} s ago (HTTP {seen[2]})")
+        return " · ".join(parts)
 
     def _read_scooter_mac(self) -> str | None:
         eid = self._ents().get("scooter_mac")
