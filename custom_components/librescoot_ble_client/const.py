@@ -10,6 +10,16 @@ ESPHOME_PROJECT_NAME = "librescoot.ble_client"
 CONF_NODE = "node_name"        # ESPHome node name -> esphome.<node-slug>_<action> services
 CONF_MAC = "mac"               # ESP MAC, used as the unique_id (one entry per device)
 CONF_SECRET = "secret"         # per-device bearer secret embedded in the OTA byte URL path
+CONF_KIND = "kind"             # entry kind: "relay" for the HA-wide relay entry; absent = an ESP
+
+# The single HA-wide "Librescoot Relay" entry: owns the byte listener and the HA-wide settings
+# (host, port, GitHub repo + token). ESP entries only register their secret with it.
+KIND_RELAY = "relay"
+RELAY_UNIQUE_ID = "relay"
+RELAY_TITLE = "Librescoot Relay"
+RELAY_STORE_KEY = f"{DOMAIN}.relay"          # remembers that the relay entry was created once
+SIGNAL_RELAY_READY = f"{DOMAIN}_relay_ready"  # dispatcher: listener (re)started, register again
+ISSUE_RELAY_MISSING = "relay_missing"
 
 # Config-entry option keys (editable any time via the options flow)
 CONF_GITHUB_REPO = "github_repo"

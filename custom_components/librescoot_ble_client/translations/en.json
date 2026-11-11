@@ -4,9 +4,17 @@
     "step": {
       "confirm": {
         "title": "Librescoot-BLE-Client",
-        "description": "Set up the discovered LibreScoot device \"{name}\"? Its entities are detected automatically; advanced settings (GitHub token, byte-serving host/port, channel) are in the integration's options afterwards."
+        "description": "Set up the discovered LibreScoot device \"{name}\"? Its entities are detected automatically. Relay settings (host, port, GitHub token) are in the Librescoot Relay entry; the update channel is in this entry's options."
       },
       "user": {
+        "title": "Librescoot-BLE-Client",
+        "description": "What do you want to add?",
+        "menu_options": {
+          "esp": "An ESP running the librescoot_ble_client component",
+          "relay": "The Librescoot Relay (serves firmware to the ESPs; one per Home Assistant)"
+        }
+      },
+      "esp": {
         "title": "Librescoot-BLE-Client",
         "description": "Enter the ESPHome node name of your librescoot_ble_client device (used for the pairing action). Everything else is auto-detected; tune it later in the options.",
         "data": {
@@ -15,7 +23,7 @@
       }
     },
     "abort": {
-      "already_configured": "This device is already configured."
+      "already_configured": "This is already configured."
     }
   },
   "options": {
@@ -24,12 +32,9 @@
         "title": "Librescoot-BLE-Client",
         "description": "**Connection**\n\n{status}\n\n**Settings**\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
         "data": {
-          "github_repo": "GitHub repo (owner/name)",
-          "github_token": "GitHub token (optional, raises the rate limit)",
-          "ha_host": "Host/IP the ESP uses to reach HA's OTA byte listener",
-          "ha_port": "OTA byte-listener port (plain HTTP)",
           "channel": "Default update channel",
-          "scooter_action": "Scooter"
+          "scooter_action": "Scooter",
+          "ota_source": "OTA byte source (set on the ESP)"
         }
       },
       "scooter": {
@@ -67,6 +72,16 @@
       "mac_note": {
         "title": "Set this scooter in the YAML",
         "description": "To use {mac}, put it into your ESPHome YAML's `mac_address:` (via `!secret`) and reflash. The ESP then connects to it and prompts for the pairing passkey."
+      },
+      "relay": {
+        "title": "Librescoot Relay",
+        "description": "Home-Assistant-wide settings. The ESPs fetch firmware, release lists and delta checks from this relay (when their OTA Source is \"HA relay\"). Changing host or port re-points every ESP automatically.",
+        "data": {
+          "ha_host": "Host/IP the ESPs use to reach the relay",
+          "ha_port": "Relay port (plain HTTP)",
+          "github_repo": "GitHub repo (owner/name)",
+          "github_token": "GitHub token (optional, raises the rate limit)"
+        }
       }
     },
     "progress": {
@@ -116,6 +131,17 @@
           "confirm": {
             "title": "Restart the scooter",
             "description": "A firmware update for {node} has finished installing but the scooter has been waiting for the reboot that applies it for over 20 minutes. Submit to restart the scooter now and finish the update."
+          }
+        }
+      }
+    },
+    "relay_missing": {
+      "title": "Librescoot Relay missing",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Add the Librescoot Relay again",
+            "description": "The Librescoot Relay entry was removed. Without it the ESPs in \"HA relay\" mode get no firmware, no release list and no delta checks. Submit to add it again with default settings (port 8127). The ESPs' URLs stay valid unless you had changed host or port."
           }
         }
       }

@@ -121,6 +121,8 @@ class OtaProxy:
     async def start(self, port: int) -> bool:
         if self._runner is not None:
             return True
+        # Once per start, off the event loop: does the bundled xdelta3 run on this machine?
+        await self._hass.async_add_executor_job(chain_mod.self_test)
         app = web.Application(middlewares=[self._track])
         app.router.add_route("GET", "/ota/{secret}/{tag}/{filename}", self._handle)
         app.router.add_route("HEAD", "/ota/{secret}/{tag}/{filename}", self._handle)
@@ -335,7 +337,7 @@ class OtaProxy:
         if comp not in ("mdb", "dbc") or not _TAG_RE.match(from_tag) or not _TAG_RE.match(to_tag):
             raise web.HTTPBadRequest
         if not chain_mod.available():
-            _LOGGER.warning("delta chain: xdelta3 is not available on this host")
+            _LOGGER.warning("delta chain: xdelta3 %s", chain_mod.status())
             return web.Response(status=204)
 
         key = f"{comp}/{from_tag}/{to_tag}"

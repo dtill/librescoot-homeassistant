@@ -19,6 +19,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import shutil
 import subprocess
 import tarfile
@@ -58,16 +59,59 @@ class ChainError(Exception):
     """The chain cannot be merged; the caller should fall back to serial installs."""
 
 
-def xdelta3_path() -> str | None:
-    """The bundled binary if present, else whatever is on PATH."""
-    bundled = os.path.join(os.path.dirname(__file__), "bin", "xdelta3")
-    if os.path.isfile(bundled) and os.access(bundled, os.X_OK):
-        return bundled
+_ARCH = {"x86_64": "x86_64", "amd64": "x86_64", "aarch64": "aarch64", "arm64": "aarch64"}
+# Result of self_test(): (path or None, human-readable status). None until it has run.
+_tested: tuple[str | None, str] | None = None
+
+
+def _candidate() -> str | None:
+    """The bundled binary for this machine if there is one, else whatever is on PATH."""
+    arch = _ARCH.get(platform.machine().lower())
+    if arch:
+        bundled = os.path.join(os.path.dirname(__file__), "bin", f"xdelta3-{arch}")
+        if os.path.isfile(bundled):
+            if not os.access(bundled, os.X_OK):
+                os.chmod(bundled, 0o755)  # HACS/zip installs can drop the exec bit
+            return bundled
     return shutil.which("xdelta3")
+
+
+def self_test() -> str:
+    """Run `xdelta3 -V` once and cache whether it works here. Blocking — call from an executor.
+
+    A binary for the wrong architecture, a missing library or a non-zero exit makes chaining
+    "not available" instead of failing in the middle of a build."""
+    global _tested
+    exe = _candidate()
+    if exe is None:
+        _tested = (None, f"not available: no xdelta3 for {platform.machine()}")
+    else:
+        try:
+            r = subprocess.run([exe, "-V"], capture_output=True, text=True, timeout=5)
+            version = (r.stdout + r.stderr).strip().splitlines()[:1]
+            if r.returncode == 0 and version:
+                _tested = (exe, f"available: {version[0]} ({platform.machine()})")
+            else:
+                _tested = (None, f"not available: {exe} exited {r.returncode}")
+        except (OSError, subprocess.SubprocessError) as err:
+            _tested = (None, f"not available: {exe}: {err}")
+    _LOGGER.info("xdelta3 %s", _tested[1])
+    return _tested[1]
+
+
+def xdelta3_path() -> str | None:
+    """The binary that passed the self-test (runs it on first use if start-up did not)."""
+    if _tested is None:
+        self_test()
+    return _tested[0]
 
 
 def available() -> bool:
     return xdelta3_path() is not None
+
+
+def status() -> str:
+    return _tested[1] if _tested is not None else "not tested yet"
 
 
 def _read_int(path: str) -> int | None:

@@ -16,10 +16,11 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant.components.repairs import RepairsFlow
+from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import CONF_MAC, CONF_NODE, DOMAIN, SERVICE_PASSKEY_REPLY, SERVICE_REBOOT
+from .const import CONF_MAC, CONF_NODE, DOMAIN, ISSUE_RELAY_MISSING, SERVICE_PASSKEY_REPLY, SERVICE_REBOOT
 from .helpers import parse_pin, resolve_entities
 
 # A TEXT field, not a number: the passkey is shown on the dashboard with leading zeros, and a
@@ -212,6 +213,21 @@ class RebootRepairFlow(RepairsFlow):
         )
 
 
+class RelayMissingRepairFlow(RepairsFlow):
+    """Confirm, then create the HA-wide relay entry again (same path as the automatic creation)."""
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(self, user_input: dict | None = None) -> FlowResult:
+        if user_input is not None:
+            await self.hass.config_entries.flow.async_init(
+                DOMAIN, context={"source": SOURCE_IMPORT}, data={}
+            )
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict | None
 ) -> RepairsFlow:
@@ -219,6 +235,8 @@ async def async_create_fix_flow(
     # on each setup), so recover node/mac from the entry id embedded in the issue_id
     # (pairing_<entry_id> / reboot_<entry_id>) whenever it's missing — without a mac the entity
     # lookup can fail and the 'BLE Pair Scooter' press would be silently skipped.
+    if issue_id == ISSUE_RELAY_MISSING:
+        return RelayMissingRepairFlow()
     data = dict(data or {})
     if not data.get("node") and "_" in issue_id:
         entry = hass.config_entries.async_get_entry(issue_id.split("_", 1)[1])

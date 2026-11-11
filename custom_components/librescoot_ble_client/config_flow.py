@@ -29,6 +29,7 @@ from .const import (
     CONF_GITHUB_TOKEN,
     CONF_HA_HOST,
     CONF_HA_PORT,
+    CONF_KIND,
     CONF_MAC,
     CONF_NODE,
     CONF_SECRET,
@@ -36,8 +37,22 @@ from .const import (
     DEFAULT_HA_PORT,
     DEFAULT_REPO,
     DOMAIN,
+    KIND_RELAY,
+    RELAY_TITLE,
+    RELAY_UNIQUE_ID,
 )
-from .helpers import default_host, parse_pin, resolve_entities, scan_for_scooters, slug
+from .helpers import (
+    RELAY_KEYS,
+    default_host,
+    esp_entries,
+    is_relay,
+    mark_relay_created,
+    parse_pin,
+    relay_entry,
+    resolve_entities,
+    scan_for_scooters,
+    slug,
+)
 
 _RESCAN = "__rescan__"
 _UNBIND = "__unbind__"
@@ -81,20 +96,70 @@ class LibrescootConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """"Add entry": an ESP always; the HA-wide relay only while none exists."""
+        if relay_entry(self.hass) is None:
+            return self.async_show_menu(step_id="user", menu_options=["esp", "relay"])
+        return await self.async_step_esp()
+
+    async def async_step_esp(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             node = user_input[CONF_NODE].strip()
             await self.async_set_unique_id(slug(node))
             self._abort_if_unique_id_configured()
             return self.async_create_entry(title=node, data={CONF_NODE: node, CONF_MAC: None})
         return self.async_show_form(
-            step_id="user",
+            step_id="esp",
             data_schema=vol.Schema({vol.Required(CONF_NODE): str}),
         )
+
+    async def async_step_relay(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self._create_relay()
+
+    async def async_step_import(self, import_data: dict[str, Any]) -> ConfigFlowResult:
+        """Created automatically once (async_setup) and by the 'relay missing' Repair."""
+        return await self._create_relay()
+
+    async def _create_relay(self) -> ConfigFlowResult:
+        await self.async_set_unique_id(RELAY_UNIQUE_ID)
+        self._abort_if_unique_id_configured()  # there is only ever one
+        await mark_relay_created(self.hass)
+        # Upgrade path: the HA-wide settings used to live on each ESP entry — take the first set.
+        opts = next(
+            ({k: e.options[k] for k in RELAY_KEYS if k in e.options}
+             for e in esp_entries(self.hass) if any(k in e.options for k in RELAY_KEYS)),
+            {},
+        )
+        return self.async_create_entry(title=RELAY_TITLE, data={CONF_KIND: KIND_RELAY}, options=opts)
 
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
+        if is_relay(config_entry):
+            return RelayOptionsFlow()
         return LibrescootOptionsFlow()
+
+
+class RelayOptionsFlow(OptionsFlow):
+    """HA-wide settings of the relay: where ESPs reach it, and the GitHub repo/token it uses."""
+
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return await self.async_step_relay()
+
+    async def async_step_relay(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        opts = self.config_entry.options
+        if user_input is not None:
+            return self.async_create_entry(title="", data={**opts, **user_input})
+        schema = vol.Schema(
+            {
+                vol.Required(CONF_HA_HOST, default=opts.get(CONF_HA_HOST) or await default_host(self.hass)): str,
+                vol.Required(CONF_HA_PORT, default=opts.get(CONF_HA_PORT, DEFAULT_HA_PORT)): vol.All(
+                    vol.Coerce(int), vol.Range(min=1, max=65535)
+                ),
+                vol.Required(CONF_GITHUB_REPO, default=opts.get(CONF_GITHUB_REPO, DEFAULT_REPO)): str,
+                vol.Optional(CONF_GITHUB_TOKEN, default=opts.get(CONF_GITHUB_TOKEN, "")): str,
+            }
+        )
+        return self.async_show_form(step_id="relay", data_schema=schema)
 
 
 class LibrescootOptionsFlow(OptionsFlow):
@@ -220,7 +285,6 @@ class LibrescootOptionsFlow(OptionsFlow):
                 return await self.async_step_manual()
             return self._save()  # "keep" — just save the settings
 
-        host = opts.get(CONF_HA_HOST) or await default_host(self.hass)
         actions = [{"value": "keep", "label": "Keep current scooter — just save settings"}]
         if self._scooter_mac:
             actions.append({"value": "manage", "label": f"{self._scooter_mac} — this ESP’s scooter (pair / unbind)"})
@@ -230,12 +294,6 @@ class LibrescootOptionsFlow(OptionsFlow):
         ]
         schema = vol.Schema(
             {
-                vol.Required(CONF_GITHUB_REPO, default=opts.get(CONF_GITHUB_REPO, DEFAULT_REPO)): str,
-                vol.Optional(CONF_GITHUB_TOKEN, default=opts.get(CONF_GITHUB_TOKEN, "")): str,
-                vol.Required(CONF_HA_HOST, default=host): str,
-                vol.Required(CONF_HA_PORT, default=opts.get(CONF_HA_PORT, DEFAULT_HA_PORT)): vol.All(
-                    vol.Coerce(int), vol.Range(min=1, max=65535)
-                ),
                 vol.Required(CONF_CHANNEL, default=opts.get(CONF_CHANNEL, DEFAULT_CHANNEL)): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=CHANNELS)
                 ),

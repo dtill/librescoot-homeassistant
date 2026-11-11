@@ -7,12 +7,23 @@ import re
 
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers.storage import Store
 
 _LOGGER = logging.getLogger(__name__)
 
 from .const import (
+    CONF_GITHUB_REPO,
+    CONF_GITHUB_TOKEN,
+    CONF_HA_HOST,
+    CONF_HA_PORT,
+    CONF_KIND,
+    DEFAULT_HA_PORT,
+    DEFAULT_REPO,
     DOMAIN,
+    KIND_RELAY,
+    RELAY_STORE_KEY,
     ENTITY_CHANNEL,
     ENTITY_CONNECTION,
     ENTITY_LINK_MODE,
@@ -35,6 +46,49 @@ from .const import (
     ENTITY_UPDATE_DBC,
     ENTITY_UPDATE_MDB,
 )
+
+
+RELAY_KEYS = (CONF_HA_HOST, CONF_HA_PORT, CONF_GITHUB_REPO, CONF_GITHUB_TOKEN)
+
+
+def is_relay(entry: ConfigEntry) -> bool:
+    return entry.data.get(CONF_KIND) == KIND_RELAY
+
+
+def relay_entry(hass: HomeAssistant) -> ConfigEntry | None:
+    """The HA-wide "Librescoot Relay" entry, loaded or not."""
+    return next((e for e in hass.config_entries.async_entries(DOMAIN) if is_relay(e)), None)
+
+
+def esp_entries(hass: HomeAssistant) -> list[ConfigEntry]:
+    return [e for e in hass.config_entries.async_entries(DOMAIN) if not is_relay(e)]
+
+
+async def relay_settings(hass: HomeAssistant) -> dict:
+    """Host, port, repo and token the relay serves with. They live on the relay entry; before one
+    exists (first start after the upgrade) the first ESP entry's options still apply."""
+    entry = relay_entry(hass)
+    src = entry.options if entry is not None else next(
+        (e.options for e in esp_entries(hass) if any(k in e.options for k in RELAY_KEYS)), {}
+    )
+    return {
+        CONF_HA_HOST: src.get(CONF_HA_HOST) or await default_host(hass),
+        CONF_HA_PORT: src.get(CONF_HA_PORT, DEFAULT_HA_PORT),
+        CONF_GITHUB_REPO: src.get(CONF_GITHUB_REPO, DEFAULT_REPO),
+        CONF_GITHUB_TOKEN: src.get(CONF_GITHUB_TOKEN) or None,
+    }
+
+
+def _relay_store(hass: HomeAssistant) -> Store:
+    return Store(hass, 1, RELAY_STORE_KEY)
+
+
+async def relay_was_created(hass: HomeAssistant) -> bool:
+    return bool((await _relay_store(hass).async_load() or {}).get("created"))
+
+
+async def mark_relay_created(hass: HomeAssistant) -> None:
+    await _relay_store(hass).async_save({"created": True})
 
 
 def slug(value: str) -> str:

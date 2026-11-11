@@ -12,17 +12,21 @@ integration never creates a second one — it only feeds and configures it.
 from __future__ import annotations
 
 import logging
+import os
 import secrets
+import shutil
 
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant, ServiceCall, callback
 from homeassistant.exceptions import ConfigEntryNotReady
 import homeassistant.helpers.config_validation as cv
-from homeassistant.helpers import entity_registry as er, issue_registry as ir
+from homeassistant.helpers import device_registry as dr, entity_registry as er, issue_registry as ir
+from homeassistant.helpers.dispatcher import async_dispatcher_connect, async_dispatcher_send
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
+from homeassistant.helpers.typing import ConfigType
 
 from .const import (
     CONF_CHANNEL,
@@ -41,30 +45,58 @@ from .const import (
     ENTITY_PASSKEY_REQUIRED,
     ENTITY_REBOOT_REQUIRED,
     ENTITY_REMOVE_BOND,
+    ISSUE_RELAY_MISSING,
     LISTENER_ROUTE,
+    RELAY_TITLE,
+    RELAY_UNIQUE_ID,
     SERVICE_PASSKEY_REPLY,
     SERVICE_REBOOT,
     SERVICE_UPDATE,
+    SIGNAL_RELAY_READY,
 )
-from .helpers import default_host, find_esphome_device, parse_pin, resolve_entities, slug
-from .listener import OtaProxy
+from .helpers import (
+    esp_entries,
+    find_esphome_device,
+    is_relay,
+    parse_pin,
+    relay_entry,
+    relay_settings,
+    relay_was_created,
+    resolve_entities,
+    slug,
+)
+from .listener import CHAIN_DIR, OtaProxy
 
 _LOGGER = logging.getLogger(__name__)
 
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def _relay_fields(hass: HomeAssistant) -> dict:
+    """The HA-wide part of an ESP's context: where and with what the relay serves."""
+    rs = await relay_settings(hass)
+    return {
+        "repo": rs[CONF_GITHUB_REPO],
+        "token": rs[CONF_GITHUB_TOKEN],
+        "host": rs[CONF_HA_HOST],
+        "port": rs[CONF_HA_PORT],
+    }
+
+
 async def _build_ctx(hass: HomeAssistant, entry: ConfigEntry) -> dict:
-    opts = entry.options
     return {
         "entry_id": entry.entry_id,
         "node": entry.data[CONF_NODE],
         "mac": entry.data.get(CONF_MAC),
         "secret": entry.data[CONF_SECRET],
-        "repo": opts.get(CONF_GITHUB_REPO, DEFAULT_REPO),
-        "token": opts.get(CONF_GITHUB_TOKEN) or None,
-        "channel": opts.get(CONF_CHANNEL, DEFAULT_CHANNEL),
-        "host": opts.get(CONF_HA_HOST) or await default_host(hass),
-        "port": opts.get(CONF_HA_PORT, DEFAULT_HA_PORT),
+        "channel": entry.options.get(CONF_CHANNEL, DEFAULT_CHANNEL),
+        **await _relay_fields(hass),
     }
+
+
+def _esp_ctxs(hass: HomeAssistant) -> list[dict]:
+    return [v for v in hass.data.get(DOMAIN, {}).values() if isinstance(v, dict) and "secret" in v and "node" in v]
 
 
 def _source_url(ctx: dict) -> str:
@@ -114,6 +146,13 @@ async def _apply_source_url(hass: HomeAssistant, ctx: dict, entity_id: str) -> N
     _LOGGER.info("pointed %s OTA source at %s", ctx["node"], want)
 
 
+def _push_source_url(hass: HomeAssistant, ctx: dict) -> None:
+    """One-shot: point the ESP at the relay now (relay mode only, only if it differs)."""
+    eid = resolve_entities(hass, ctx["node"], ctx.get("mac")).get("source_url")
+    if eid and _available(hass, eid):
+        hass.async_create_task(_apply_source_url(hass, ctx, eid))
+
+
 def _ensure_source_url(hass: HomeAssistant, entry: ConfigEntry, ctx: dict) -> None:
     """Keep the ESP's OTA Source URL pointed at our listener **while it is in HA-relay mode**.
 
@@ -125,8 +164,7 @@ def _ensure_source_url(hass: HomeAssistant, entry: ConfigEntry, ctx: dict) -> No
     if not eid:
         _LOGGER.debug("OTA Source URL entity not found yet for %s", ctx["node"])
         return
-    if _available(hass, eid):
-        hass.async_create_task(_apply_source_url(hass, ctx, eid))
+    _push_source_url(hass, ctx)
 
     @callback
     def _on_state(event) -> None:
@@ -252,9 +290,70 @@ def _watch_reboot(hass: HomeAssistant, entry: ConfigEntry, ctx: dict) -> None:
     entry.async_on_unload(async_track_state_change_event(hass, [eid], _on_state))
 
 
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Create the HA-wide relay entry once — on the first start after the upgrade or the first
+    install. Afterwards a missing relay entry means the user deleted it: Repair, no silent re-add."""
+    hass.data.setdefault(DOMAIN, {})
+    if relay_entry(hass) is None and not await relay_was_created(hass):
+        hass.async_create_task(
+            hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_IMPORT}, data={})
+        )
+    return True
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
+    if is_relay(entry):
+        return await _setup_relay(hass, entry)
+    return await _setup_esp(hass, entry)
 
+
+async def _setup_relay(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """The relay entry owns the shared byte listener. It registers every ESP entry already loaded;
+    ESP entries that load later register themselves (load order does not matter)."""
+    rs = await relay_settings(hass)
+    proxy = OtaProxy(hass)
+    if not await proxy.start(rs[CONF_HA_PORT]):
+        # The previous HA process may still hold the port right after a restart — retry.
+        raise ConfigEntryNotReady(f"OTA byte listener could not bind port {rs[CONF_HA_PORT]}")
+    hass.data[DOMAIN]["_listener"] = proxy
+    hass.data[DOMAIN]["_relay_entry_id"] = entry.entry_id
+
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, RELAY_UNIQUE_ID)},
+        name=RELAY_TITLE,
+        manufacturer="Librescoot",
+        model="OTA byte relay",
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    ir.async_delete_issue(hass, DOMAIN, ISSUE_RELAY_MISSING)
+    entry.async_on_unload(entry.add_update_listener(_async_reload))
+    _async_register_services(hass)
+    # ESP entries refresh host/port/repo/token, register their secret and re-push their URL.
+    async_dispatcher_send(hass, SIGNAL_RELAY_READY)
+    return True
+
+
+def _check_relay_missing(hass: HomeAssistant, removing: str | None = None) -> None:
+    """A fixable Repair while ESP entries exist but the relay entry does not (it was deleted).
+    `removing`: the entry being deleted right now — HA still lists it during async_remove_entry."""
+    relay = relay_entry(hass)
+    if relay is not None and relay.entry_id == removing:
+        relay = None
+    esps = [e for e in esp_entries(hass) if e.entry_id != removing]
+    if relay is None and esps:
+        ir.async_create_issue(
+            hass, DOMAIN, ISSUE_RELAY_MISSING,
+            is_fixable=True,
+            severity=ir.IssueSeverity.ERROR,
+            translation_key=ISSUE_RELAY_MISSING,
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, ISSUE_RELAY_MISSING)
+
+
+async def _setup_esp(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # One-time per-device bearer secret, persisted in the entry.
     if CONF_SECRET not in entry.data:
         hass.config_entries.async_update_entry(
@@ -264,30 +363,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     ctx = await _build_ctx(hass, entry)
     hass.data[DOMAIN][entry.entry_id] = ctx
 
-    # Shared plain-HTTP byte listener; each device registers its secret.
-    # One listener is shared by every configured device. Only publish it in hass.data once it really
-    # listens, and never remove an already-working one on our own failure: with two entries (one per
-    # board) a transient bind failure would otherwise drop the sibling's working proxy and leave this
-    # entry rebuilding a proxy that can never bind — an endless retry loop.
+    # Never fail on a missing listener: the relay entry may load later (or was deleted). Without it
+    # this ESP simply has no relay until it appears; nothing here loops or retries.
     proxy: OtaProxy | None = hass.data[DOMAIN].get("_listener")
-    created = proxy is None
-    if proxy is None:
-        proxy = OtaProxy(hass)
-    if not await proxy.start(ctx["port"]):
-        # Without the listener the ESP can never fetch bytes in HA-relay mode — fail the setup so
-        # Home Assistant retries (e.g. once whatever holds the port is released) instead of running
-        # silently broken.
-        hass.data[DOMAIN].pop(entry.entry_id, None)
-        raise ConfigEntryNotReady(f"OTA byte listener could not bind port {ctx['port']}")
-    if created:
-        hass.data[DOMAIN]["_listener"] = proxy
-    proxy.register(ctx["secret"], ctx["repo"], ctx["token"])
-    if proxy.port is not None and proxy.port != ctx["port"]:
-        _LOGGER.warning(
-            "listener already runs on port %d; entry wants %d — using %d "
-            "(restart HA after removing the other entry to change it)",
-            proxy.port, ctx["port"], proxy.port,
-        )
+    if proxy is not None:
+        proxy.register(ctx["secret"], ctx["repo"], ctx["token"])
+
+    async def _on_relay_ready() -> None:
+        ctx.update(await _relay_fields(hass))
+        listener: OtaProxy | None = hass.data.get(DOMAIN, {}).get("_listener")
+        if listener is not None:
+            listener.register(ctx["secret"], ctx["repo"], ctx["token"])
+        _push_source_url(hass, ctx)  # host or port may have changed with the relay settings
+
+    entry.async_on_unload(async_dispatcher_connect(hass, SIGNAL_RELAY_READY, _on_relay_ready))
+    _check_relay_missing(hass)
 
     _ensure_source_url(hass, entry, ctx)
 
@@ -312,16 +402,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    data = hass.data.get(DOMAIN, {})
+    if is_relay(entry):
+        proxy: OtaProxy | None = data.pop("_listener", None)
+        data.pop("_relay_entry_id", None)
+        if proxy is not None:
+            await proxy.stop()
+        return True
     ir.async_delete_issue(hass, DOMAIN, _pairing_issue_id(entry))
     ir.async_delete_issue(hass, DOMAIN, _reboot_issue_id(entry))
-    ctx = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
-    proxy: OtaProxy | None = hass.data.get(DOMAIN, {}).get("_listener")
+    ctx = data.pop(entry.entry_id, None)
+    proxy = data.get("_listener")
     if ctx and proxy is not None:
-        proxy.unregister(ctx["secret"])
-        if proxy.empty:
-            await proxy.stop()
-            hass.data[DOMAIN].pop("_listener", None)
+        proxy.unregister(ctx["secret"])  # the listener itself belongs to the relay entry
     return True
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Deleting the relay entry deletes what it owns (the merged-bundle cache — deterministic,
+    rebuilt on demand) and raises the 'relay missing' Repair for the ESP entries left behind."""
+    if not is_relay(entry):
+        _check_relay_missing(hass, removing=entry.entry_id)
+        return
+    path = hass.config.path(CHAIN_DIR)
+    if os.path.isdir(path):
+        await hass.async_add_executor_job(shutil.rmtree, path, True)
+    _check_relay_missing(hass, removing=entry.entry_id)
 
 
 async def _async_reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
