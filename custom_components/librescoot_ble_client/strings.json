@@ -10,7 +10,8 @@
         "title": "Librescoot-BLE-Client",
         "description": "What do you want to add?",
         "menu_options": {
-          "esp": "An ESP running the librescoot_ble_client component",
+          "new_esp": "Set up a new ESP (creates its ESPHome configuration)",
+          "esp": "Add an ESP that is already set up in ESPHome",
           "relay": "The Librescoot Relay (serves firmware to the ESPs; one per Home Assistant)"
         }
       },
@@ -20,10 +21,83 @@
         "data": {
           "node_name": "ESPHome node name (e.g. librescoot-component-485934)"
         }
+      },
+      "wiz_resume": {
+        "title": "Unfinished ESP setup",
+        "description": "There is an unfinished setup for **{node}** (step {step} of {count}, saved {age} ago).",
+        "menu_options": {
+          "wiz_continue": "Continue it",
+          "wiz_restart": "Discard it and start over"
+        }
+      },
+      "wiz_chip": {
+        "title": "New ESP — 1/6 Chip",
+        "description": "Which board is it? Look at the module label: the number after **R** is the PSRAM size (e.g. N16R8 = 16 MB flash, 8 MB PSRAM). Boards without PSRAM get firmware through Home Assistant.",
+        "data": {
+          "chip": "Board"
+        }
+      },
+      "wiz_scooter": {
+        "title": "New ESP — 2/6 Scooter",
+        "description": "Home Assistant hears {count} scooter(s) nearby. Pick one, type its Bluetooth address, or set it later.",
+        "data": {
+          "scooter": "Scooter",
+          "mac": "Bluetooth address (only for \"Enter the scooter's Bluetooth address\")",
+          "back": "← Back to the previous step"
+        }
+      },
+      "wiz_name": {
+        "title": "New ESP — 3/6 Name",
+        "description": "The node name becomes the ESP's network name and the file name in your ESPHome folder: lowercase letters, digits and hyphens, up to 31 characters.",
+        "data": {
+          "node": "Node name",
+          "friendly": "Display name",
+          "back": "← Back to the previous step"
+        }
+      },
+      "wiz_wifi": {
+        "title": "New ESP — 4/6 WiFi",
+        "description": "Reuse WiFi secrets from your ESPHome secrets.yaml, or enter a network. A new password is written to secrets.yaml only and is not kept by Home Assistant.",
+        "data": {
+          "wifi": "WiFi",
+          "ssid": "Network name",
+          "password": "Password",
+          "back": "← Back to the previous step"
+        }
+      },
+      "wiz_options": {
+        "title": "New ESP — 5/6 Options",
+        "description": "{psram_note}",
+        "data": {
+          "byte_source": "Firmware download",
+          "use_token": "Use the GitHub token from secrets.yaml",
+          "github_token": "GitHub token (optional; raises GitHub's request limit)",
+          "back": "← Back to the previous step"
+        }
+      },
+      "wiz_write": {
+        "title": "New ESP — 6/6 Create",
+        "description": "Create **{file}** for **{node}** ({chip}, scooter {scooter}) from the example configuration on GitHub, and add its secrets to `esphome/secrets.yaml` (nothing there is changed or removed). {error}",
+        "data": {
+          "back": "← Back to the previous step"
+        }
       }
     },
     "abort": {
-      "already_configured": "This is already configured."
+      "already_configured": "This is already configured.",
+      "wizard_done_existing": "The configuration was created; this ESP was already added to the integration."
+    },
+    "error": {
+      "invalid_mac": "Not a Bluetooth address (AA:BB:CC:DD:EE:FF).",
+      "invalid_node": "Use lowercase letters, digits and hyphens, up to 31 characters, starting with a letter or digit.",
+      "node_exists": "An ESPHome configuration or device with this name already exists.",
+      "wifi_missing": "Enter the network name and the password.",
+      "no_esphome_dir": "There is no esphome folder in your Home Assistant configuration. Install the ESPHome Device Builder add-on first.",
+      "github_unreachable": "Could not fetch the example configuration from GitHub. Check the internet connection and try again.",
+      "write_failed": "Could not create the configuration."
+    },
+    "create_entry": {
+      "wizard_done": "Created **esphome/{node}.yaml**. Next: open **ESPHome Device Builder**, select **{node}**, choose **Install → Plug into this computer** and connect the ESP by USB. When Home Assistant then reports the new ESPHome device, enter this encryption key:\n\n`{key}`{mac_note}"
     }
   },
   "options": {

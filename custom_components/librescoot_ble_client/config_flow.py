@@ -43,6 +43,7 @@ from .const import (
     RELAY_TITLE,
     RELAY_UNIQUE_ID,
 )
+from .wizard_flow import WizardFlowMixin
 from .helpers import (
     RELAY_KEYS,
     default_host,
@@ -60,7 +61,7 @@ _RESCAN = "__rescan__"
 _UNBIND = "__unbind__"
 
 
-class LibrescootConfigFlow(ConfigFlow, domain=DOMAIN):
+class LibrescootConfigFlow(WizardFlowMixin, ConfigFlow, domain=DOMAIN):
     """Handle the config flow (zeroconf discovery + manual)."""
 
     VERSION = 1
@@ -98,10 +99,11 @@ class LibrescootConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """"Add entry": an ESP always; the HA-wide relay only while none exists."""
+        """"Add entry": set up a new ESP, add an existing one, and the relay while none exists."""
+        options = ["new_esp", "esp"]
         if relay_entry(self.hass) is None:
-            return self.async_show_menu(step_id="user", menu_options=["esp", "relay"])
-        return await self.async_step_esp()
+            options.append("relay")
+        return self.async_show_menu(step_id="user", menu_options=options)
 
     async def async_step_esp(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
