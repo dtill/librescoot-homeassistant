@@ -108,7 +108,23 @@ WiFi, then creates the ESPHome configuration from the current example in your ES
 adds the secrets it needs to `secrets.yaml` (existing entries are never changed). Install it from
 the ESPHome Device Builder (*Install → Plug into this computer*) and enter the encryption key the
 wizard shows when Home Assistant reports the new device. You can go back at every step, and an
-unfinished setup can be continued later. Requires the ESPHome Device Builder add-on.
+unfinished setup can be continued later.
+
+- **Board detection over USB:** the board step links to a detection page. Plug the ESP into the
+  computer you are using, open the page in a new tab and press *Detect*; it reads chip type,
+  revision, flash size and built-in PSRAM through the browser (nothing is written to the ESP) and
+  the wizard then offers the result. Needs Chrome or Edge on a desktop and Home Assistant opened
+  over HTTPS. External PSRAM (N16R8, N8R8) cannot be read from the chip, so the page asks.
+- **Without the ESPHome add-on** (Home Assistant Container / Core, or the add-on not installed),
+  the wizard writes nothing and offers the configuration and the secret lines for download
+  instead; append the secret lines to your own `secrets.yaml`.
+
+**Already wrote your own configuration?** *Add Integration → Librescoot-BLE-Client → Adopt an
+ESPHome configuration* lists the files in your ESPHome folder that use the component, checks the
+one you pick and suggests fixes, each with a preview of the change: a missing `psram:` block on an
+ESP32-S3, a missing `flash_size` on 4 MB S3 modules, the `web_server` on a board without PSRAM, an
+API key written into the file instead of `secrets.yaml`, and options the component no longer has.
+Only the fixes you tick are written (the previous file is kept as `.bak`), then the ESP is linked.
 
 Manual install: copy `custom_components/librescoot_ble_client/` into your Home Assistant
 `config/custom_components/` folder, restart, then add the integration as in step 3.

@@ -73,6 +73,7 @@ from .helpers import (
 from .entity import esp_device_info
 from .listener import CHAIN_DIR, SIGNAL_RELAY_STATS, STATS_INTERVAL_S, OtaProxy
 from .monitor import EspMonitor
+from .wizard_web import async_setup_wizard_web
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -302,6 +303,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Create the HA-wide relay entry once — on the first start after the upgrade or the first
     install. Afterwards a missing relay entry means the user deleted it: Repair, no silent re-add."""
     hass.data.setdefault(DOMAIN, {})
+    await async_setup_wizard_web(hass)
     if relay_entry(hass) is None and not await relay_was_created(hass):
         hass.async_create_task(
             hass.config_entries.flow.async_init(DOMAIN, context={"source": SOURCE_IMPORT}, data={})

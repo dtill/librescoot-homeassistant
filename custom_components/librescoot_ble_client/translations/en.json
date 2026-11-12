@@ -11,6 +11,7 @@
         "description": "What do you want to add?",
         "menu_options": {
           "new_esp": "Set up a new ESP (creates its ESPHome configuration)",
+          "adopt": "Adopt an ESPHome configuration I wrote myself (check it, link it)",
           "esp": "Add an ESP that is already set up in ESPHome",
           "relay": "The Librescoot Relay (serves firmware to the ESPs; one per Home Assistant)"
         }
@@ -32,7 +33,7 @@
       },
       "wiz_chip": {
         "title": "New ESP — 1/6 Chip",
-        "description": "Which board is it? Look at the module label: the number after **R** is the PSRAM size (e.g. N16R8 = 16 MB flash, 8 MB PSRAM). Boards without PSRAM get firmware through Home Assistant.",
+        "description": "Which board is it? Look at the module label: the number after **R** is the PSRAM size (e.g. N16R8 = 16 MB flash, 8 MB PSRAM). Boards without PSRAM get firmware through Home Assistant.\n\nOr let the browser read it: plug the ESP into this computer, open [the USB detection page]({usb_url}) **in a new tab** (Chrome / Edge, Home Assistant over HTTPS), then come back here and choose \"fetch its result\".",
         "data": {
           "chip": "Board"
         }
@@ -77,27 +78,52 @@
       },
       "wiz_write": {
         "title": "New ESP — 6/6 Create",
-        "description": "Create **{file}** for **{node}** ({chip}, scooter {scooter}) from the example configuration on GitHub, and add its secrets to `esphome/secrets.yaml` (nothing there is changed or removed). {error}",
+        "description": "Create **{file}** for **{node}** ({chip}, scooter {scooter}) from the example configuration on GitHub, and add its secrets to `esphome/secrets.yaml` (nothing there is changed or removed). {where} {error}",
         "data": {
+          "how": "Where to put it",
           "back": "← Back to the previous step"
+        }
+      },
+      "wiz_download": {
+        "title": "New ESP — download",
+        "description": "Nothing was written on this Home Assistant. Download both files (links stay valid for 30 minutes):\n\n- [{node}.yaml]({yaml_url}) — put it next to your other ESPHome configurations\n- [{node}-secrets.yaml]({secrets_url}) — **append** these lines to your ESPHome `secrets.yaml`, do not replace the file\n\nOr copy the secret lines from here:\n```yaml\n{secrets}\n```\nSubmit to add the ESP to the integration."
+      },
+      "adopt": {
+        "title": "Adopt an ESPHome configuration",
+        "description": "These configurations in your ESPHome folder use the librescoot_ble_client component. Pick one; it is checked first and only changed where you agree.",
+        "data": {
+          "file": "Configuration"
+        }
+      },
+      "adopt_fix": {
+        "title": "Adopt {file}",
+        "description": "Node **{node}**, {board}.\n\n{summary}\n\n{previews}",
+        "data": {
+          "fixes": "Changes to apply",
+          "back": "← Back to the file list"
         }
       }
     },
     "abort": {
       "already_configured": "This is already configured.",
-      "wizard_done_existing": "The configuration was created; this ESP was already added to the integration."
+      "wizard_done_existing": "The configuration was created; this ESP was already added to the integration.",
+      "adopt_none": "No configuration in your ESPHome folder uses the librescoot_ble_client component."
     },
     "error": {
       "invalid_mac": "Not a Bluetooth address (AA:BB:CC:DD:EE:FF).",
       "invalid_node": "Use lowercase letters, digits and hyphens, up to 31 characters, starting with a letter or digit.",
       "node_exists": "An ESPHome configuration or device with this name already exists.",
       "wifi_missing": "Enter the network name and the password.",
-      "no_esphome_dir": "There is no esphome folder in your Home Assistant configuration. Install the ESPHome Device Builder add-on first.",
       "github_unreachable": "Could not fetch the example configuration from GitHub. Check the internet connection and try again.",
-      "write_failed": "Could not create the configuration."
+      "write_failed": "Could not create the configuration.",
+      "adopt_no_name": "This file's node name could not be read (esphome: name:).",
+      "adopt_linked": "This ESP is already added to the integration.",
+      "adopt_psram_both": "Choose only one of the two PSRAM changes.",
+      "adopt_key_exists": "secrets.yaml already has a key with the name this change would use; move the API key by hand."
     },
     "create_entry": {
-      "wizard_done": "Created **esphome/{node}.yaml**. Next: open **ESPHome Device Builder**, select **{node}**, choose **Install → Plug into this computer** and connect the ESP by USB. When Home Assistant then reports the new ESPHome device, enter this encryption key:\n\n`{key}`{mac_note}"
+      "wizard_done": "Created **esphome/{node}.yaml**. Next: open **ESPHome Device Builder**, select **{node}**, choose **Install → Plug into this computer** and connect the ESP by USB. When Home Assistant then reports the new ESPHome device, enter this encryption key:\n\n`{key}`{mac_note}",
+      "adopt_done": "Linked **{node}** ({file}). {changed} Install it again from the ESPHome Device Builder if anything was changed."
     }
   },
   "options": {
@@ -164,8 +190,7 @@
       "scanning": "Scanning for scooters… the ESP is briefly switched to scan mode (~18 s), then restored."
     },
     "error": {
-      "no_scooter_found": "No scooter adverts seen. Make sure the scooter is nearby and awake, then Scan again.",
-      "invalid_pin": "That doesn't look like a passkey. Enter the 6 digits shown on the scooter dashboard, leading zeros included."
+      "no_scooter_found": "No scooter adverts seen. Make sure the scooter is nearby and awake, then Scan again."
     }
   },
   "issues": {
@@ -189,14 +214,11 @@
           },
           "failed": {
             "title": "Pairing didn't complete",
-            "description": "{node} is not paired with the scooter — the code may have been wrong, the scooter may have gone out of range ({rssi}), or bonding did not complete. A connection alone is not enough: the ESP verifies the bond itself. Submit to try again."
+            "description": "No connection was established for {node} — the code may have been wrong or the scooter went out of range ({rssi}). Submit to try again."
           }
         },
         "progress": {
-          "verifying": "Finishing pairing… waiting for the scooter to confirm the bond."
-        },
-        "error": {
-          "invalid_pin": "That doesn't look like a passkey. Enter the 6 digits shown on the scooter dashboard, leading zeros included."
+          "verifying": "Finishing pairing… waiting for the encrypted connection to the scooter to come up."
         }
       }
     },

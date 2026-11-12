@@ -1,15 +1,25 @@
 {
   "domain": "librescoot_ble_client",
   "name": "Librescoot-BLE-Client",
-  "version": "0.1.0",
+  "version": "1.0.1",
   "documentation": "https://github.com/dtill/librescoot-homeassistant",
   "issue_tracker": "https://github.com/dtill/librescoot-homeassistant/issues",
-  "codeowners": ["@dtill"],
+  "codeowners": [
+    "@dtill"
+  ],
   "config_flow": true,
-  "dependencies": ["http"],
-  "after_dependencies": ["esphome"],
+  "dependencies": [
+    "http",
+    "panel_custom",
+    "websocket_api"
+  ],
+  "after_dependencies": [
+    "esphome"
+  ],
   "iot_class": "local_polling",
-  "requirements": ["icmplib==3.0.4"],
+  "requirements": [
+    "icmplib==3.0.4"
+  ],
   "zeroconf": [
     {
       "type": "_esphomelib._tcp.local.",

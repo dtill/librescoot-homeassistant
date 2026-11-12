@@ -100,7 +100,7 @@ class LibrescootConfigFlow(WizardFlowMixin, ConfigFlow, domain=DOMAIN):
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """"Add entry": set up a new ESP, add an existing one, and the relay while none exists."""
-        options = ["new_esp", "esp"]
+        options = ["new_esp", "adopt", "esp"]
         if relay_entry(self.hass) is None:
             options.append("relay")
         return self.async_show_menu(step_id="user", menu_options=options)
