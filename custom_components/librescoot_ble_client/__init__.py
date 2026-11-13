@@ -34,7 +34,6 @@ from homeassistant.helpers.event import (
 from homeassistant.helpers.typing import ConfigType
 
 from .const import (
-    CONF_CHANNEL,
     CONF_GITHUB_REPO,
     CONF_GITHUB_TOKEN,
     CONF_HA_HOST,
@@ -42,7 +41,6 @@ from .const import (
     CONF_MAC,
     CONF_NODE,
     CONF_SECRET,
-    DEFAULT_CHANNEL,
     DEFAULT_HA_PORT,
     DEFAULT_REPO,
     DOMAIN,
@@ -99,7 +97,6 @@ async def _build_ctx(hass: HomeAssistant, entry: ConfigEntry) -> dict:
         "node": entry.data[CONF_NODE],
         "mac": entry.data.get(CONF_MAC),
         "secret": entry.data[CONF_SECRET],
-        "channel": entry.options.get(CONF_CHANNEL, DEFAULT_CHANNEL),
         **await _relay_fields(hass),
     }
 

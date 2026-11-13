@@ -22,10 +22,8 @@ from homeassistant.helpers import selector
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .const import (
-    CHANNELS,
     CONF_ALARM_CODE,
     CONF_ALARM_DISARM_DISABLES,
-    CONF_CHANNEL,
     CONF_DISCOVERED_MAC,
     CONF_GITHUB_REPO,
     CONF_GITHUB_TOKEN,
@@ -35,7 +33,6 @@ from .const import (
     CONF_MAC,
     CONF_NODE,
     CONF_SECRET,
-    DEFAULT_CHANNEL,
     DEFAULT_HA_PORT,
     DEFAULT_REPO,
     DOMAIN,
@@ -208,7 +205,7 @@ class LibrescootOptionsFlow(OptionsFlow):
                 f"❌ ESPHome device not found (node `{self.config_entry.data[CONF_NODE]}`). Add the ESP in "
                 "the ESPHome integration, or re-add this entry with the ESP's node name."
             )
-        # One chain, left to right: Relay → ESP → scooter.
+        # One chain, top to bottom: Relay │ ESP │ scooter.
         proxy = self.hass.data.get(DOMAIN, {}).get("_listener")
         if mon.byte_source == "HA relay":
             relay = "❌ URL differs" if mon.url_mismatch else "✅"
@@ -220,9 +217,10 @@ class LibrescootOptionsFlow(OptionsFlow):
         else:
             relay = "checking…"
         esp = "✅ online" if mon.online else "❌ offline" if mon.online is False else "checking…"
-        link = scooters.scooter_link(self.hass, self._ents()) if mon.online else {"state": "unknown"}
+        link = scooters.scooter_link(self.hass, self._ents(), self.config_entry.entry_id) if mon.online else {"state": "unknown"}
         scooter = scooters.link_text(link) if mon.online else "unknown while the ESP is offline"
-        return f"**Relay** {relay} → **ESP** {esp} → **Scooter** {scooter}"
+        # Markdown hard breaks (two trailing spaces) keep the chain on separate lines.
+        return "  \n".join([f"**Relay** {relay}", "│", f"**ESP** {esp}", "│", f"**Scooter** {scooter}"])
 
     def _read_scooter_mac(self) -> str | None:
         eid = self._ents().get("scooter_mac")
@@ -242,7 +240,7 @@ class LibrescootOptionsFlow(OptionsFlow):
         if user_input is not None:
             action = user_input.pop("scooter_action", "keep")
             ota_source = user_input.pop("ota_source", None)
-            self._settings = user_input  # OTA / relay / channel settings
+            self._settings = user_input  # alarm panel settings
             # OTA byte source lives on the ESP (its NVS-persisted select), not in the config entry —
             # set it there if the user changed it. The integration then stops/starts overriding the URL.
             if ota_source and ota_source != self._read_ota_source():
@@ -266,21 +264,21 @@ class LibrescootOptionsFlow(OptionsFlow):
             {"value": "scan", "label": "🔍 Scan for a new scooter"},
             {"value": "manual", "label": "⌨️ Enter a scooter MAC manually"},
         ]
+        # Order = how often it is needed: the scooter, where firmware comes from, the alarm panel.
+        # The update channel is not here: the ESP owns it (its update-channel entity) and sends it
+        # with every update check.
         schema = vol.Schema(
             {
-                vol.Optional(CONF_ALARM_CODE, default=opts.get(CONF_ALARM_CODE, "")): str,
-                vol.Required(CONF_ALARM_DISARM_DISABLES, default=opts.get(CONF_ALARM_DISARM_DISABLES, False)): bool,
-                vol.Required(CONF_CHANNEL, default=opts.get(CONF_CHANNEL, DEFAULT_CHANNEL)): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=CHANNELS)
+                vol.Required("scooter_action", default="keep"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=actions, mode=selector.SelectSelectorMode.LIST)
                 ),
                 vol.Required("ota_source", default=self._read_ota_source()): selector.SelectSelector(
                     selector.SelectSelectorConfig(
                         options=["HA relay", "direct GitHub"], mode=selector.SelectSelectorMode.LIST
                     )
                 ),
-                vol.Required("scooter_action", default="keep"): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=actions, mode=selector.SelectSelectorMode.LIST)
-                ),
+                vol.Optional(CONF_ALARM_CODE, default=opts.get(CONF_ALARM_CODE, "")): str,
+                vol.Required(CONF_ALARM_DISARM_DISABLES, default=opts.get(CONF_ALARM_DISARM_DISABLES, False)): bool,
             }
         )
         return self.async_show_form(

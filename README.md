@@ -60,7 +60,7 @@ The integration has two kinds of entries:
   to reach Home Assistant, the port, and an optional GitHub token. If you delete it, a Repair
   offers to add it again.
 - **One entry per ESP** — found automatically once the ESP is in the ESPHome integration. Its
-  options hold the update channel, the alarm code and the scooter picker.
+  options hold the scooter picker, the firmware byte source and the alarm code.
 
 Each entry has its own device with the entities below. The ESP's own entities stay on its ESPHome
 device.
@@ -135,7 +135,8 @@ Manual install: copy `custom_components/librescoot_ble_client/` into your Home A
 | :--- | :--- |
 | Pairing, "scooter stuck", "ESP not found", "different relay address" prompts | *Settings → System → Repairs* |
 | Relay address and port, GitHub token | *Settings → Devices & Services → Librescoot-BLE-Client → Librescoot Relay → Configure* |
-| Update channel, alarm code, find a scooter | *… → Librescoot-BLE-Client → your ESP's entry → Configure* |
+| Find or change the scooter, byte source, alarm code | *… → Librescoot-BLE-Client → your ESP's entry → Configure* |
+| Update channel | the ESP's **OTA channel** select (its ESPHome device) |
 | Online, link mode, relay status, alarm panel | the **… (HA)** device of your ESP's entry |
 | Firmware updates | the scooter's **OTA MDB Update** / **OTA DBC Update** entities |
 | Everything the ESP can do | the ESP's ESPHome device page |
