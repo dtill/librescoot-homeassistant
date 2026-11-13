@@ -43,6 +43,7 @@ from .const import (
     RELAY_TITLE,
     RELAY_UNIQUE_ID,
 )
+from . import scooters
 from .wizard_flow import WizardFlowMixin
 from .helpers import (
     RELAY_KEYS,
@@ -207,16 +208,21 @@ class LibrescootOptionsFlow(OptionsFlow):
                 f"❌ ESPHome device not found (node `{self.config_entry.data[CONF_NODE]}`). Add the ESP in "
                 "the ESPHome integration, or re-add this entry with the ESP's node name."
             )
-        parts = ["✅ ESP found", "✅ online" if mon.online else "❌ offline"]
-        if mon.byte_source == "HA relay":
-            parts.append("❌ URL differs from the relay" if mon.url_mismatch else "✅ relay URL")
-        elif mon.byte_source:
-            parts.append(f"bytes: {mon.byte_source}")
+        # One chain, left to right: Relay → ESP → scooter.
         proxy = self.hass.data.get(DOMAIN, {}).get("_listener")
-        seen = proxy.last_seen(ctx.get("secret", "")) if proxy is not None else None
-        if seen:
-            parts.append(f"last relay request {int(time.time() - seen[0])} s ago (HTTP {seen[2]})")
-        return " · ".join(parts)
+        if mon.byte_source == "HA relay":
+            relay = "❌ URL differs" if mon.url_mismatch else "✅"
+            seen = proxy.last_seen(ctx.get("secret", "")) if proxy is not None else None
+            if seen:
+                relay += f" (last request {int(time.time() - seen[0])} s ago, HTTP {seen[2]})"
+        elif mon.byte_source:
+            relay = f"not used ({mon.byte_source})"
+        else:
+            relay = "checking…"
+        esp = "✅ online" if mon.online else "❌ offline" if mon.online is False else "checking…"
+        link = scooters.scooter_link(self.hass, self._ents()) if mon.online else {"state": "unknown"}
+        scooter = scooters.link_text(link) if mon.online else "unknown while the ESP is offline"
+        return f"**Relay** {relay} → **ESP** {esp} → **Scooter** {scooter}"
 
     def _read_scooter_mac(self) -> str | None:
         eid = self._ents().get("scooter_mac")
@@ -358,7 +364,7 @@ class LibrescootOptionsFlow(OptionsFlow):
                 return await self.async_step_unbind()
             return await self._handle_picked(picked)
 
-        options = [{"value": addr, "label": label} for addr, label in self._found.items()]
+        options = scooters.candidates(self.hass, self.config_entry.entry_id, self._found, self._own_mac)
         options.append({"value": _RESCAN, "label": "🔄 Scan again"})
         if self._own_mac:
             options.append({"value": _UNBIND, "label": "🔓 Remove bond (unbind this ESP’s scooter)"})
@@ -371,8 +377,8 @@ class LibrescootOptionsFlow(OptionsFlow):
                     )
                 }
             ),
-            description_placeholders={"count": str(len(self._found))},
-            errors={"base": "no_scooter_found"} if not self._found else None,
+            description_placeholders={"count": str(len(options) - 1)},
+            errors={"base": "no_scooter_found"} if len(options) == 1 else None,
         )
 
     # ---- shared: what to do with a chosen MAC --------------------------------
@@ -417,12 +423,34 @@ class LibrescootOptionsFlow(OptionsFlow):
         )
 
     async def async_step_mac_note(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors: dict[str, str] = {}
+        note = ""
+        if user_input is not None:
+            if not user_input.get("write", True):
+                return self._save(self._picked)
+            try:
+                note = await self.hass.async_add_executor_job(
+                    scooters.write_mac, self.hass.config.path("esphome"),
+                    self.config_entry.data[CONF_NODE], self._picked)
+            except Exception as err:  # noqa: BLE001 - WizardError or filesystem: show it
+                errors["base"] = "mac_write_failed"
+                note = str(err)
+            else:
+                self._mac_written = note
+                return await self.async_step_mac_done()
+        return self.async_show_form(
+            step_id="mac_note",
+            data_schema=vol.Schema({vol.Required("write", default=True): bool}),
+            errors=errors,
+            description_placeholders={"mac": self._picked or "—", "error": note},
+        )
+
+    async def async_step_mac_done(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             return self._save(self._picked)
         return self.async_show_form(
-            step_id="mac_note",
-            data_schema=vol.Schema({}),
-            description_placeholders={"mac": self._picked or "—"},
+            step_id="mac_done", data_schema=vol.Schema({}),
+            description_placeholders={"changed": self._mac_written, "node": self.config_entry.data[CONF_NODE]},
         )
 
     def _save(self, mac: str | None = None) -> ConfigFlowResult:

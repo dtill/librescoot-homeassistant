@@ -33,7 +33,7 @@
       },
       "wiz_chip": {
         "title": "New ESP — 1/6 Chip",
-        "description": "Which board is it? Look at the module label: the number after **R** is the PSRAM size (e.g. N16R8 = 16 MB flash, 8 MB PSRAM). Boards without PSRAM get firmware through Home Assistant.\n\nOr let the browser read it: plug the ESP into this computer, open [the USB detection page]({usb_url}) **in a new tab** (Chrome / Edge, Home Assistant over HTTPS), then come back here and choose \"fetch its result\".",
+        "description": "Which board is it? Look at the module label: the number after **R** is the PSRAM size (e.g. N16R8 = 16 MB flash, 8 MB PSRAM). Boards without PSRAM get firmware through Home Assistant.\n\nOr let the browser read it: plug the ESP into this computer and open {usb_link} — it opens in a new tab and needs Chrome or Edge with Home Assistant over HTTPS. Then come back to this tab and choose \"fetch its result\".",
         "data": {
           "chip": "Board"
         }
@@ -86,7 +86,7 @@
       },
       "wiz_download": {
         "title": "New ESP — download",
-        "description": "Nothing was written on this Home Assistant. Download both files (links stay valid for 30 minutes):\n\n- [{node}.yaml]({yaml_url}) — put it next to your other ESPHome configurations\n- [{node}-secrets.yaml]({secrets_url}) — **append** these lines to your ESPHome `secrets.yaml`, do not replace the file\n\nOr copy the secret lines from here:\n```yaml\n{secrets}\n```\nSubmit to add the ESP to the integration."
+        "description": "Nothing was written on this Home Assistant. Download both files (links stay valid for 30 minutes):\n\n- {yaml_link} — put it next to your other ESPHome configurations\n- {secrets_link} — **append** these lines to your ESPHome `secrets.yaml`, do not replace the file\n\nOr copy the secret lines from here:\n```yaml\n{secrets}\n```\nSubmit to add the ESP to the integration."
       },
       "adopt": {
         "title": "Adopt an ESPHome configuration",
@@ -130,7 +130,7 @@
     "step": {
       "init": {
         "title": "Librescoot-BLE-Client",
-        "description": "{status}\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. The scooter MAC belongs in the ESPHome YAML (`mac_address:`); this integration doesn't reprogram the ESP.",
+        "description": "{status}\n\nHome-Assistant-side settings and the scooter. This ESP is configured for: {mac}. The **Scooter** option picks what to do — manage the current one (pair / unbind), scan for a new one, or type a MAC. A new scooter is written into the ESP's ESPHome configuration on request; the ESP then needs one install.",
         "data": {
           "channel": "Default update channel",
           "scooter_action": "Scooter",
@@ -155,7 +155,7 @@
       },
       "scan_result": {
         "title": "Pick your scooter",
-        "description": "Found {count} scooter(s), nearest first. Your ESP's own scooter is always listed — even if the scan couldn't re-hear it (a connected/weak scooter often isn't caught in the short window). Pick one, scan again, or unbind this ESP's scooter.",
+        "description": "Found {count} scooter(s). Ones this ESP hears come first, strongest signal first — place the ESP on the scooter you mean and take the top one. **new** = no ESP uses it yet; **connected to …** = another ESP holds it (a connected scooter does not advertise, so only that ESP knows it); **paired with …** = another ESP's scooter that is not connected right now.",
         "data": {
           "scooter": "Scooter (strongest signal first)"
         }
@@ -172,8 +172,11 @@
         "description": "Remove this ESP's bond to {mac}? The ESP forgets the scooter and re-pairs (you'll enter the passkey again) on the next connect. Your phone pairing is not affected. Submit to confirm."
       },
       "mac_note": {
-        "title": "Set this scooter in the YAML",
-        "description": "To use {mac}, put it into your ESPHome YAML's `mac_address:` (via `!secret`) and reflash. The ESP then connects to it and prompts for the pairing passkey."
+        "title": "Use this scooter",
+        "description": "The ESP takes its scooter from its ESPHome configuration (`mac_address:`). Let the integration write **{mac}** there — into secrets.yaml when the YAML reads it from a secret, else into the YAML (the previous file is kept as .bak) — and then install the ESP again. Untick to only remember it here and change the YAML yourself. {error}",
+        "data": {
+          "write": "Write the scooter address into the ESP's configuration"
+        }
       },
       "relay": {
         "title": "Librescoot Relay",
@@ -184,13 +187,18 @@
           "github_repo": "GitHub repo (owner/name)",
           "github_token": "GitHub token (optional, raises the rate limit)"
         }
+      },
+      "mac_done": {
+        "title": "Scooter written",
+        "description": "{changed}\n\nNow install **{node}** again from the ESPHome Device Builder (*Install → Wirelessly*). Then pair it when the scooter shows a code."
       }
     },
     "progress": {
       "scanning": "Scanning for scooters… the ESP is briefly switched to scan mode (~18 s), then restored."
     },
     "error": {
-      "no_scooter_found": "No scooter adverts seen. Make sure the scooter is nearby and awake, then Scan again."
+      "no_scooter_found": "No scooter adverts seen. Make sure the scooter is nearby and awake, then Scan again.",
+      "mac_write_failed": "Could not write it automatically:"
     }
   },
   "issues": {
@@ -250,7 +258,72 @@
     },
     "relay_url_mismatch": {
       "title": "{title} uses a different relay URL",
-      "description": "The ESP of **{title}** is in \"HA relay\" mode but uses\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nThe integration rewrites the URL whenever the ESP is reachable; if this stays, check that the ESP's OTA Source URL is not set by its YAML and that host/port in the Librescoot Relay entry are reachable from the ESP."
+      "description": "The ESP of **{title}** is in \"HA relay\" mode but uses\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nThe integration writes the relay URL into the ESP as soon as the ESP is connected to Home Assistant; this message then disappears by itself. If it stays while the ESP is online, check that its YAML does not fix the OTA Source URL and that host/port in the Librescoot Relay entry are reachable from the ESP.",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Point the ESP at the relay",
+            "description": "The ESP is in \"HA relay\" mode but downloads from\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nSubmit to write the relay URL into the ESP now, over its ESPHome connection (it keeps it across restarts)."
+          }
+        },
+        "error": {
+          "url_not_taken": "The ESP did not accept the URL. Check that its OTA Source select is \"HA relay\" and that its YAML does not fix the URL.",
+          "esp_unreachable": "The ESP is not connected to Home Assistant right now. Try again when it is online."
+        },
+        "abort": {
+          "esp_not_loaded": "This ESP's integration entry is not loaded."
+        }
+      }
+    },
+    "no_scooter": {
+      "title": "{title} has no scooter set",
+      "description": "The ESP **{node}** does not know which scooter to connect to (its scooter MAC is empty). Open this repair while the ESP is online to scan for scooters and set one.",
+      "fix_flow": {
+        "step": {
+          "scan": {
+            "title": "Looking for scooters",
+            "description": "The ESP scans for about 20 seconds."
+          },
+          "pick": {
+            "title": "Pick the scooter",
+            "description": "Found {count} scooter(s). Ones this ESP hears come first, strongest signal first — place the ESP on the scooter you mean and take the top one. **new** = no ESP uses it yet; **connected to …** = another ESP holds it (a connected scooter does not advertise, so only that ESP knows it); **paired with …** = another ESP's scooter that is not connected right now.",
+            "data": {
+              "scooter": "Scooter"
+            }
+          },
+          "done": {
+            "title": "Scooter set",
+            "description": "{changed}\n\nNow install **{node}** again from the ESPHome Device Builder (*Install → Wirelessly*). After the install the ESP connects to the scooter; pair it when the scooter shows a code."
+          },
+          "init": {
+            "title": "Set a scooter for {node}",
+            "description": "How do you want to pick the scooter?",
+            "menu_options": {
+              "scan": "Scan with this ESP (about 20 seconds; place the ESP on or next to the scooter)",
+              "known": "Choose from the scooters already known (Home Assistant's Bluetooth and your other ESPs)",
+              "manual": "Enter the scooter's Bluetooth address"
+            }
+          },
+          "manual": {
+            "title": "Enter the scooter's address",
+            "description": "The Bluetooth address of the scooter, e.g. from the scooter's settings or another ESP's **BLE Scooter nRF MAC**.",
+            "data": {
+              "mac": "Bluetooth address (AA:BB:CC:DD:EE:FF)",
+              "back": "← Back to the choices"
+            }
+          }
+        },
+        "progress": {
+          "scanning": "The ESP scans for scooters (about 20 seconds)…"
+        },
+        "error": {
+          "invalid_mac": "Not a Bluetooth address (AA:BB:CC:DD:EE:FF).",
+          "none_known": "No scooter known yet. Scan with this ESP, or go back and enter the address."
+        },
+        "abort": {
+          "esp_not_loaded": "This ESP's integration entry is not loaded."
+        }
+      }
     }
   },
   "services": {

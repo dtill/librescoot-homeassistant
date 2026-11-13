@@ -218,10 +218,10 @@ def _state(hass: HomeAssistant, entity_id: str) -> str | None:
     return st.state
 
 
-def _parse_discovered(raw: str) -> tuple[dict[str, str], str | None]:
-    """Parse the ESP's `Discovered Scooters` state ("MAC@rssi,MAC@rssi*,…") into {MAC: label} and
-    the ESP's own scooter MAC (the one marked with a trailing '*', rssi -127 = not heard)."""
-    out: dict[str, str] = {}
+def _parse_discovered(raw: str) -> tuple[dict[str, int | None], str | None]:
+    """Parse the ESP's scan report ("MAC@rssi,MAC@rssi*,…") into {MAC: rssi} and the ESP's own
+    scooter MAC (the one marked with a trailing '*'; rssi -127 = not heard this pass)."""
+    out: dict[str, int | None] = {}
     own: str | None = None
     for tok in raw.split(","):
         tok = tok.strip()
@@ -229,23 +229,21 @@ def _parse_discovered(raw: str) -> tuple[dict[str, str], str | None]:
             continue
         is_own = tok.endswith("*")
         tok = tok[:-1] if is_own else tok
-        if "@" in tok:
-            addr, rssi = tok.rsplit("@", 1)
-        else:
-            addr, rssi = tok, ""
+        addr, _, rssi = tok.partition("@")
+        try:
+            out[addr.upper()] = int(rssi)
+        except ValueError:
+            out[addr.upper()] = None
         if is_own:
-            own = addr
-            heard = rssi not in ("", "-127", "-128")
-            out[addr] = f"{addr}  ({rssi} dBm — this ESP’s scooter)" if heard else f"{addr}  (this ESP’s scooter — not heard this scan)"
-        else:
-            out[addr] = f"{addr}  ({rssi} dBm)" if rssi else addr
+            own = addr.upper()
     return out, own
 
 
 async def scan_for_scooters(
     hass: HomeAssistant, node_name: str, mac: str | None, secret: str, dwell: float = 18.0
-) -> tuple[dict[str, str], str | None]:
-    """Find scooters. Returns ({MAC: label}, own_scooter_mac).
+) -> tuple[dict[str, int | None], str | None]:
+    """Find scooters this ESP hears. Returns ({MAC: rssi}, own_scooter_mac); `scooters.candidates`
+    adds what Home Assistant and the other ESPs know.
 
     The ESP is briefly put into `scan` link mode; while scanning it **POSTs** its result to this
     integration's HTTP listener (no HA entity for the raw list). We read it back from the listener

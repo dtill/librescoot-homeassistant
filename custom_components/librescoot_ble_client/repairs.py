@@ -20,8 +20,15 @@ from homeassistant.config_entries import SOURCE_IMPORT
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 
-from .const import CONF_MAC, CONF_NODE, DOMAIN, ISSUE_RELAY_MISSING, SERVICE_PASSKEY_REPLY, SERVICE_REBOOT
-from .helpers import parse_pin, resolve_entities
+from .const import CONF_MAC, CONF_NODE, CONF_SECRET, DOMAIN, ISSUE_RELAY_MISSING, SERVICE_PASSKEY_REPLY, SERVICE_REBOOT
+from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode
+
+from . import scooters
+from .helpers import parse_pin, resolve_entities, scan_for_scooters
+from .wizard import MAC_RE
+
+_BACK = "__back__"
+_RESCAN = "__rescan__"
 
 # A TEXT field, not a number: the passkey is shown on the dashboard with leading zeros, and a
 # numeric input field discards them as you type ("012345" collapses to "12345" or refuses the
@@ -228,6 +235,126 @@ class RelayMissingRepairFlow(RepairsFlow):
         return self.async_show_form(step_id="confirm", data_schema=vol.Schema({}))
 
 
+class RelayUrlRepairFlow(RepairsFlow):
+    """Write the relay URL into the ESP's OTA Source URL over its ESPHome API link."""
+
+    def __init__(self, entry_id: str) -> None:
+        self._entry_id = entry_id
+
+    def _monitor(self):
+        return self.hass.data.get(DOMAIN, {}).get(self._entry_id, {}).get("monitor")
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        return await self.async_step_confirm()
+
+    async def async_step_confirm(self, user_input: dict | None = None) -> FlowResult:
+        mon = self._monitor()
+        if mon is None:
+            return self.async_abort(reason="esp_not_loaded")
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if await mon.async_push_url():
+                return self.async_create_entry(title="", data={})
+            errors["base"] = "url_not_taken" if mon.url_entity() else "esp_unreachable"
+        return self.async_show_form(
+            step_id="confirm", data_schema=vol.Schema({}), errors=errors,
+            description_placeholders={"esp_url": mon.esp_url or "—", "want_url": mon.want_url() or "—"},
+        )
+
+
+class NoScooterRepairFlow(RepairsFlow):
+    """Find a scooter for an ESP without one and write its MAC into the ESP's configuration."""
+
+    def __init__(self, entry_id: str) -> None:
+        self._entry_id = entry_id
+        self._task = None
+        self._scan: dict = {}
+        self._own: str | None = None
+        self._changed = ""
+        self._scanned = False
+
+    def _entry(self):
+        return self.hass.config_entries.async_get_entry(self._entry_id)
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        if self._entry() is None:
+            return self.async_abort(reason="esp_not_loaded")
+        return self.async_show_menu(step_id="init", menu_options=["scan", "known", "manual"],
+                                    description_placeholders={"node": self._entry().data[CONF_NODE]})
+
+    async def async_step_scan(self, user_input: dict | None = None) -> FlowResult:
+        entry = self._entry()
+        if self._task is None:
+            self._task = self.hass.async_create_task(scan_for_scooters(
+                self.hass, entry.data[CONF_NODE], entry.data.get(CONF_MAC), entry.data.get(CONF_SECRET, "")))
+        if not self._task.done():
+            return self.async_show_progress(step_id="scan", progress_action="scanning", progress_task=self._task)
+        try:
+            self._scan, self._own = self._task.result()
+        except Exception:  # noqa: BLE001 - the list below still has HA's and the other ESPs' scooters
+            self._scan, self._own = {}, None
+        self._task = None
+        self._scanned = True
+        return self.async_show_progress_done(next_step_id="pick")
+
+    async def async_step_known(self, user_input: dict | None = None) -> FlowResult:
+        """No scan: what Home Assistant's Bluetooth and the other ESPs already know."""
+        self._scan, self._own, self._scanned = {}, None, False
+        return await self.async_step_pick()
+
+    async def _use(self, mac: str) -> FlowResult:
+        try:
+            self._changed = await self.hass.async_add_executor_job(
+                scooters.write_mac, self.hass.config.path("esphome"), self._entry().data[CONF_NODE], mac)
+        except Exception as err:  # noqa: BLE001 - WizardError or filesystem: tell the user
+            self._changed = f"Not written automatically ({err}). Put **{mac}** into the ESP's YAML " \
+                            "(`mac_address:`) yourself."
+        return await self.async_step_done()
+
+    async def async_step_pick(self, user_input: dict | None = None) -> FlowResult:
+        if user_input is not None:
+            pick = user_input["scooter"]
+            if pick == _RESCAN:
+                return await self.async_step_scan()
+            if pick == _BACK:
+                return await self.async_step_init()
+            return await self._use(pick)
+        options = scooters.candidates(self.hass, self._entry_id, self._scan, self._own)
+        count = len(options)
+        options += [{"value": _RESCAN, "label": "🔄 Scan with this ESP" + (" again" if self._scanned else "")},
+                    {"value": _BACK, "label": "← Back to the choices"}]
+        return self.async_show_form(
+            step_id="pick", errors=None if count else {"base": "none_known"},
+            data_schema=vol.Schema({
+                vol.Required("scooter", default=options[0]["value"]): SelectSelector(
+                    SelectSelectorConfig(options=options, mode=SelectSelectorMode.LIST)),
+            }),
+            description_placeholders={"count": str(count)},
+        )
+
+    async def async_step_manual(self, user_input: dict | None = None) -> FlowResult:
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if user_input.get("back"):
+                return await self.async_step_init()
+            mac = (user_input.get("mac") or "").strip().upper()
+            if MAC_RE.match(mac):
+                return await self._use(mac)
+            errors["mac"] = "invalid_mac"
+        return self.async_show_form(
+            step_id="manual", errors=errors,
+            data_schema=vol.Schema({vol.Optional("mac", default=""): str,
+                                    vol.Optional("back", default=False): bool}),
+        )
+
+    async def async_step_done(self, user_input: dict | None = None) -> FlowResult:
+        if user_input is not None:
+            return self.async_create_entry(title="", data={})
+        return self.async_show_form(step_id="done", data_schema=vol.Schema({}),
+                                    description_placeholders={"changed": self._changed,
+                                                              "node": self._entry().data[CONF_NODE]})
+
+
 async def async_create_fix_flow(
     hass: HomeAssistant, issue_id: str, data: dict | None
 ) -> RepairsFlow:
@@ -237,6 +364,10 @@ async def async_create_fix_flow(
     # lookup can fail and the 'BLE Pair Scooter' press would be silently skipped.
     if issue_id == ISSUE_RELAY_MISSING:
         return RelayMissingRepairFlow()
+    if issue_id.startswith("no_scooter_"):
+        return NoScooterRepairFlow(issue_id[len("no_scooter_"):])
+    if issue_id.startswith("relay_url_mismatch_"):
+        return RelayUrlRepairFlow(issue_id[len("relay_url_mismatch_"):])
     data = dict(data or {})
     if not data.get("node") and "_" in issue_id:
         entry = hass.config_entries.async_get_entry(issue_id.split("_", 1)[1])
