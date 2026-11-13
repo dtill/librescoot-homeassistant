@@ -130,7 +130,7 @@
     "step": {
       "init": {
         "title": "Librescoot-BLE-Client",
-        "description": "{status}\n\nThis ESP is configured for scooter **{mac}**. **Scooter** manages it (pair / unbind), scans for a new one or takes a typed address; a new scooter is written into the ESP's ESPHome configuration on request and the ESP then needs one install. The update channel is chosen on the ESP itself (its **OTA channel** select).",
+        "description": "{status}\n\n{scooter}",
         "data": {
           "scooter_action": "Scooter",
           "ota_source": "OTA byte source (set on the ESP)",

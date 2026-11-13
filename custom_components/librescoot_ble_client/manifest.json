@@ -1,7 +1,7 @@
 {
   "domain": "librescoot_ble_client",
   "name": "Librescoot-BLE-Client",
-  "version": "1.0.7",
+  "version": "1.0.9",
   "documentation": "https://github.com/dtill/librescoot-homeassistant",
   "issue_tracker": "https://github.com/dtill/librescoot-homeassistant/issues",
   "codeowners": [
