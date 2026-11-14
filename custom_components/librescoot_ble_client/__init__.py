@@ -59,6 +59,7 @@ from .const import (
     SIGNAL_RELAY_READY,
 )
 from .helpers import (
+    device_entry_ids,
     esp_entries,
     find_esphome_device,
     is_relay,
@@ -206,7 +207,7 @@ def _enable_disabled_entities(hass: HomeAssistant, ctx: dict, names: list[str]) 
             changed = True
     if not changed:
         return  # none present yet, or all already enabled
-    for entry_id in device.config_entries:
+    for entry_id in device_entry_ids(device):
         esp = hass.config_entries.async_get_entry(entry_id)
         if esp is not None and esp.domain == "esphome":
             hass.async_create_task(hass.config_entries.async_reload(entry_id))

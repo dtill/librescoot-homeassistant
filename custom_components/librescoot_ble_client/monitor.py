@@ -18,7 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event, async_tr
 
 from .const import DOMAIN, LISTENER_ROUTE
 from . import scooters
-from .helpers import find_esphome_device, resolve_entities
+from .helpers import device_entry_ids, entry_device, find_esphome_device, resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,14 +111,14 @@ class EspMonitor:
         if esp_device is None:
             return
         reg = dr.async_get(self.hass)
-        own = reg.async_get_device(identifiers={entry_device_identifier(self.entry)})
+        own = entry_device(reg, entry_device_identifier(self.entry), self.entry.entry_id)
         if own is not None and own.via_device_id != esp_device.id:
             reg.async_update_device(own.id, via_device_id=esp_device.id)
 
     def _esp_host(self, esp_device: dr.DeviceEntry | None) -> str | None:
         """The address the ESPHome integration itself connects to, else the mDNS name."""
         if esp_device is not None:
-            for entry_id in esp_device.config_entries:
+            for entry_id in device_entry_ids(esp_device):
                 esp_entry = self.hass.config_entries.async_get_entry(entry_id)
                 if esp_entry is not None and esp_entry.domain == "esphome" and esp_entry.data.get("host"):
                     return esp_entry.data["host"]

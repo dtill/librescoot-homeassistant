@@ -134,13 +134,33 @@ def _norm_name(value: str) -> str:
     return re.sub(r"[^a-z0-9]", "", (value or "").lower())
 
 
+def all_devices(dev_reg: dr.DeviceRegistry) -> list[dr.DeviceEntry]:
+    """Every device entry. Since HA 2026.11 iterating `devices` yields the entries and using it as a
+    mapping is deprecated; older versions only have the mapping."""
+    devices = dev_reg.devices
+    return list(devices.values()) if hasattr(type(devices), "values") else list(devices)
+
+
+def device_entry_ids(device: dr.DeviceEntry) -> list[str]:
+    """The config entries a device belongs to (one since HA 2026.11, a set before)."""
+    entry_id = getattr(device, "config_entry_id", None)
+    return [entry_id] if entry_id else list(device.config_entries)
+
+
+def entry_device(dev_reg: dr.DeviceRegistry, identifier: tuple[str, str], entry_id: str):
+    """A config entry's own device by identifier (identifiers are unique per entry since 2026.11)."""
+    if hasattr(dev_reg, "async_get_device_by_identifier"):
+        return dev_reg.async_get_device_by_identifier(identifier, entry_id)
+    return dev_reg.async_get_device(identifiers={identifier})
+
+
 def find_esphome_device(hass: HomeAssistant, node_name: str, mac: str | None):
     """Locate the ESPHome device for this node: by MAC connection, then by the ESPHome entry's node
     name, then by device name."""
     dev_reg = dr.async_get(hass)
     if mac:
         want = _norm_mac(mac)
-        for device in dev_reg.devices.values():
+        for device in all_devices(dev_reg):
             if any(_norm_mac(conn[1]) == want for conn in device.connections):
                 return device
     target = _norm_name(node_name)
@@ -151,7 +171,7 @@ def find_esphome_device(hass: HomeAssistant, node_name: str, mac: str | None):
             devices = dr.async_entries_for_config_entry(dev_reg, esp_entry.entry_id)
             if devices:
                 return devices[0]
-    for device in dev_reg.devices.values():
+    for device in all_devices(dev_reg):
         if target in (_norm_name(device.name or ""), _norm_name(device.name_by_user or "")):
             return device
     return None
