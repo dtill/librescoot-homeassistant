@@ -232,7 +232,10 @@ class LibrescootOptionsFlow(OptionsFlow):
         """One sentence under the status; a problem links to Repairs, where its fix flow waits."""
         repairs = "/config/repairs"
         if not self._scooter_mac:
-            return f"This ESP has no scooter set yet — [set one]({repairs}) or pick one under **Scooter** below."
+            # Only say "none set" when the ESP itself reports it; offline or not read yet → unknown.
+            if scooters.scooter_link(self.hass, self._ents())["state"] == "unset":
+                return f"This ESP has no scooter set yet — [set one]({repairs}) or pick one under **Scooter** below."
+            return "Which scooter this ESP is configured for is not known while the ESP does not report it."
         line = f"This ESP is configured for scooter with BLE MAC **{self._scooter_mac}**"
         link = scooters.scooter_link(self.hass, self._ents(), self.config_entry.entry_id)
         if link["state"] == "needs_pairing":

@@ -4,7 +4,7 @@
     "step": {
       "confirm": {
         "title": "Librescoot-BLE-Client",
-        "description": "Set up the discovered LibreScoot device \"{name}\"? Its entities are detected automatically. Relay settings (host, port, GitHub token) are in the Librescoot Relay entry; the update channel is in this entry's options."
+        "description": "Set up the discovered LibreScoot device \"{name}\"? Its entities are detected automatically. Relay settings (host, port, GitHub token) are in the Librescoot – Relay entry; the update channel is in this entry's options."
       },
       "user": {
         "title": "Librescoot-BLE-Client",
@@ -13,7 +13,7 @@
           "new_esp": "Set up a new ESP (creates its ESPHome configuration)",
           "adopt": "Adopt an ESPHome configuration I wrote myself (check it, link it)",
           "esp": "Add an ESP that is already set up in ESPHome",
-          "relay": "The Librescoot Relay (serves firmware to the ESPs; one per Home Assistant)"
+          "relay": "The Librescoot – Relay (serves firmware to the ESPs; one per Home Assistant)"
         }
       },
       "esp": {
@@ -178,7 +178,7 @@
         }
       },
       "relay": {
-        "title": "Librescoot Relay",
+        "title": "Librescoot – Relay",
         "description": "Home-Assistant-wide settings. The ESPs fetch firmware, release lists and delta checks from this relay (when their OTA Source is \"HA relay\"). Changing host or port re-points every ESP automatically.",
         "data": {
           "ha_host": "Host/IP the ESPs use to reach the relay",
@@ -241,12 +241,12 @@
       }
     },
     "relay_missing": {
-      "title": "Librescoot Relay missing",
+      "title": "Librescoot – Relay missing",
       "fix_flow": {
         "step": {
           "confirm": {
-            "title": "Add the Librescoot Relay again",
-            "description": "The Librescoot Relay entry was removed. Without it the ESPs in \"HA relay\" mode get no firmware, no release list and no delta checks. Submit to add it again with default settings (port 8127). The ESPs' URLs stay valid unless you had changed host or port."
+            "title": "Add the Librescoot – Relay again",
+            "description": "The Librescoot – Relay entry was removed. Without it the ESPs in \"HA relay\" mode get no firmware, no release list and no delta checks. Submit to add it again with default settings (port 8127). The ESPs' URLs stay valid unless you had changed host or port."
           }
         }
       }
@@ -257,7 +257,7 @@
     },
     "relay_url_mismatch": {
       "title": "{title} uses a different relay URL",
-      "description": "The ESP of **{title}** is in \"HA relay\" mode but uses\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nThe integration writes the relay URL into the ESP as soon as the ESP is connected to Home Assistant; this message then disappears by itself. If it stays while the ESP is online, check that its YAML does not fix the OTA Source URL and that host/port in the Librescoot Relay entry are reachable from the ESP.",
+      "description": "The ESP of **{title}** is in \"HA relay\" mode but uses\n`{esp_url}`\ninstead of the relay's\n`{want_url}`.\n\nThe integration writes the relay URL into the ESP as soon as the ESP is connected to Home Assistant; this message then disappears by itself. If it stays while the ESP is online, check that its YAML does not fix the OTA Source URL and that host/port in the Librescoot – Relay entry are reachable from the ESP.",
       "fix_flow": {
         "step": {
           "confirm": {

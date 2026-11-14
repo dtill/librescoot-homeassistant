@@ -50,6 +50,7 @@ from .const import (
     ENTITY_REMOVE_BOND,
     ISSUE_RELAY_MISSING,
     LISTENER_ROUTE,
+    RELAY_OLD_TITLES,
     RELAY_TITLE,
     RELAY_UNIQUE_ID,
     SERVICE_PASSKEY_REPLY,
@@ -318,6 +319,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def _setup_relay(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """The relay entry owns the shared byte listener. It registers every ESP entry already loaded;
     ESP entries that load later register themselves (load order does not matter)."""
+    if entry.title in RELAY_OLD_TITLES:  # renamed so it sorts first; a user-chosen title stays
+        hass.config_entries.async_update_entry(entry, title=RELAY_TITLE)
     rs = await relay_settings(hass)
     proxy = OtaProxy(hass)
     if not await proxy.start(rs[CONF_HA_PORT]):

@@ -55,7 +55,7 @@ Assistant can help:
 
 The integration has two kinds of entries:
 
-- **Librescoot Relay** — one per Home Assistant, created automatically. It serves firmware, release
+- **Librescoot – Relay** — one per Home Assistant, created automatically. It serves firmware, release
   lists and update checks to the ESPs and holds the settings they share: the address the ESPs use
   to reach Home Assistant, the port, and an optional GitHub token. If you delete it, a Repair
   offers to add it again.
@@ -80,7 +80,7 @@ device.
 | Relay Transfer Speed | data rate | Current firmware transfer speed to this ESP. |
 | Chain Build | sensor | Progress when Home Assistant combines several update steps into one file. |
 
-### Librescoot Relay entry
+### Librescoot – Relay entry
 
 | Entity | Type | Description |
 | :--- | :--- | :--- |
@@ -134,7 +134,7 @@ Manual install: copy `custom_components/librescoot_ble_client/` into your Home A
 | What | Where in Home Assistant |
 | :--- | :--- |
 | Pairing, "scooter stuck", "ESP not found", "different relay address" prompts | *Settings → System → Repairs* |
-| Relay address and port, GitHub token | *Settings → Devices & Services → Librescoot-BLE-Client → Librescoot Relay → Configure* |
+| Relay address and port, GitHub token | *Settings → Devices & Services → Librescoot-BLE-Client → Librescoot – Relay → Configure* |
 | Find or change the scooter, byte source, alarm code | *… → Librescoot-BLE-Client → your ESP's entry → Configure* |
 | Update channel | the ESP's **OTA channel** select (its ESPHome device) |
 | Online, link mode, relay status, alarm panel | the **… (HA)** device of your ESP's entry |

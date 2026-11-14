@@ -16,7 +16,10 @@ CONF_KIND = "kind"             # entry kind: "relay" for the HA-wide relay entry
 # (host, port, GitHub repo + token). ESP entries only register their secret with it.
 KIND_RELAY = "relay"
 RELAY_UNIQUE_ID = "relay"
-RELAY_TITLE = "Librescoot Relay"
+# HA lists an integration's entries by title (locale collation). The dash is punctuation, which sorts
+# before letters, so the relay comes before every "Librescoot …" ESP entry.
+RELAY_TITLE = "Librescoot – Relay"
+RELAY_OLD_TITLES = ("Librescoot Relay",)
 RELAY_STORE_KEY = f"{DOMAIN}.relay"          # remembers that the relay entry was created once
 SIGNAL_RELAY_READY = f"{DOMAIN}_relay_ready"  # dispatcher: listener (re)started, register again
 ISSUE_RELAY_MISSING = "relay_missing"
