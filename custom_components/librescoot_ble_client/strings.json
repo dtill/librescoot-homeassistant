@@ -253,7 +253,22 @@
     },
     "esp_not_linked": {
       "title": "ESP not found for {title}",
-      "description": "The Librescoot entry **{title}** cannot find its ESPHome device (node `{node}`, MAC `{mac}`). Without it there is no pairing Repair, no relay URL and no update steering.\n\nFix: add the ESP in the ESPHome integration, or remove this entry and add it again with the ESP's exact node name."
+      "description": "The Librescoot entry **{title}** cannot find its ESPHome device (node `{node}`, MAC `{mac}`). Without it there is no pairing Repair, no relay URL and no update steering.\n\nThis happens when the ESP was renamed or its configuration moved to another board. Open this repair to pick the right ESP. If it is not listed, add it in the ESPHome integration first.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Link {title} to its ESP",
+            "description": "The entry looks for node `{node}` / MAC `{mac}` and finds no such ESPHome device. These ESPHome devices run the Librescoot component; pick the one that belongs to **{title}**.",
+            "data": {
+              "device": "ESP"
+            }
+          }
+        },
+        "abort": {
+          "esp_not_loaded": "This ESP's integration entry is not loaded.",
+          "no_component_devices": "No ESPHome device in Home Assistant runs the Librescoot component. Add the ESP in the ESPHome integration first, then open this repair again."
+        }
+      }
     },
     "relay_url_mismatch": {
       "title": "{title} uses a different relay URL",

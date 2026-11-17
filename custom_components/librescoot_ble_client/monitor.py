@@ -18,7 +18,7 @@ from homeassistant.helpers.event import async_track_state_change_event, async_tr
 
 from .const import DOMAIN, LISTENER_ROUTE
 from . import scooters
-from .helpers import device_entry_ids, entry_device, find_esphome_device, resolve_entities
+from .helpers import device_entry_ids, entry_device, explain_link, find_esphome_device, resolve_entities
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -91,7 +91,15 @@ class EspMonitor:
     async def _tick(self, _now=None) -> None:
         device = find_esphome_device(self.hass, self.ctx["node"], self.ctx.get("mac"))
         ents = resolve_entities(self.hass, self.ctx["node"], self.ctx.get("mac")) if device else {}
-        self.linked = bool(ents)
+        linked = bool(ents)
+        if linked != self.linked:
+            why = (explain_link(self.hass, self.ctx["node"], self.ctx.get("mac")) if device is None
+                   else f"{device.name} carries none of the component's entities")
+            if linked:
+                _LOGGER.info("%s: linked to its ESPHome device (%s)", self.entry.title, why)
+            else:
+                _LOGGER.warning("%s: ESPHome device not found — %s", self.entry.title, why)
+        self.linked = linked
         self.no_scooter = bool(ents) and scooters.scooter_link(self.hass, ents)["state"] == "unset"
         self._link_device(device)
         self._watch(ents)
@@ -199,7 +207,7 @@ class EspMonitor:
         nl = f"esp_not_linked_{self.entry.entry_id}"
         if self.linked is False:
             ir.async_create_issue(
-                self.hass, DOMAIN, nl, is_fixable=False, severity=ir.IssueSeverity.ERROR,
+                self.hass, DOMAIN, nl, is_fixable=True, severity=ir.IssueSeverity.ERROR,
                 translation_key="esp_not_linked",
                 translation_placeholders={"title": self.entry.title, "node": node,
                                           "mac": self.ctx.get("mac") or "—"},

@@ -154,27 +154,88 @@ def entry_device(dev_reg: dr.DeviceRegistry, identifier: tuple[str, str], entry_
     return dev_reg.async_get_device(identifiers={identifier})
 
 
+# Entities only the librescoot_ble_client component creates: a device carrying one of them is one of ours.
+COMPONENT_MARKERS = (ENTITY_SOURCE_URL, ENTITY_UPDATE_MDB, ENTITY_LINK_MODE)
+
+
+def _esphome_entries(hass: HomeAssistant) -> dict:
+    return {e.entry_id: e for e in hass.config_entries.async_entries("esphome")}
+
+
+def _esphome_entry_of(device, esp_entries: dict):
+    return next((esp_entries[i] for i in device_entry_ids(device) if i in esp_entries), None)
+
+
+def _device_names(device, esp_entry) -> set[str]:
+    """Every name a renamed ESP might still be known by: the node name the ESPHome entry stored, the
+    entry title (the name it was added with) and the device's own and user-given name."""
+    names = {device.name or "", device.name_by_user or ""}
+    if esp_entry is not None:
+        names |= {esp_entry.data.get("device_name", ""), esp_entry.title or ""}
+    return {_norm_name(n) for n in names if n}
+
+
+def device_mac(device) -> str | None:
+    return next((conn[1] for conn in device.connections if conn[0] == dr.CONNECTION_NETWORK_MAC), None)
+
+
+def has_component(hass: HomeAssistant, device) -> bool:
+    ent_reg = er.async_get(hass)
+    return any(
+        (e.original_name or e.name) in COMPONENT_MARKERS
+        for e in er.async_entries_for_device(ent_reg, device.id, include_disabled_entities=True)
+    )
+
+
 def find_esphome_device(hass: HomeAssistant, node_name: str, mac: str | None):
-    """Locate the ESPHome device for this node: by MAC connection, then by the ESPHome entry's node
-    name, then by device name."""
+    """Locate the ESPHome device for this node: by MAC, then by name. Only devices of an ESPHome entry
+    count, so a router or another integration that knows the same MAC cannot capture the link."""
+    return _find_esphome_device(hass, node_name, mac)[0]
+
+
+def explain_link(hass: HomeAssistant, node_name: str, mac: str | None) -> str:
+    """Why the lookup ended as it did, for the log."""
+    return _find_esphome_device(hass, node_name, mac)[1]
+
+
+def _find_esphome_device(hass: HomeAssistant, node_name: str, mac: str | None):
     dev_reg = dr.async_get(hass)
+    esp_entries = _esphome_entries(hass)
+    esp_devices = [(d, _esphome_entry_of(d, esp_entries)) for d in all_devices(dev_reg)]
+    esp_devices = [(d, e) for d, e in esp_devices if e is not None]
     if mac:
         want = _norm_mac(mac)
-        for device in all_devices(dev_reg):
+        for device, _e in esp_devices:
             if any(_norm_mac(conn[1]) == want for conn in device.connections):
-                return device
+                return device, f"found by MAC {mac} ({device.name})"
     target = _norm_name(node_name)
-    # The ESPHome config entry keeps the node name (`device_name`) even when the device shows its
-    # friendly name — the reliable link for an entry added by hand (no MAC stored).
-    for esp_entry in hass.config_entries.async_entries("esphome"):
-        if _norm_name(esp_entry.data.get("device_name", "")) == target:
-            devices = dr.async_entries_for_config_entry(dev_reg, esp_entry.entry_id)
-            if devices:
-                return devices[0]
+    for device, esp_entry in esp_devices:
+        if target in _device_names(device, esp_entry):
+            return device, f"found by name {node_name} ({device.name})"
+    seen = ", ".join(
+        f"{esp_entry.data.get('device_name') or esp_entry.title} [{device_mac(device) or 'no MAC'}]"
+        for device, esp_entry in esp_devices
+    ) or "none"
+    return None, (f"no ESPHome device with MAC {mac or '—'} or name {node_name}; "
+                  f"ESPHome devices in Home Assistant: {seen}")
+
+
+def component_devices(hass: HomeAssistant) -> list[dict]:
+    """ESPHome devices that run the librescoot_ble_client component, for linking an entry by hand."""
+    dev_reg = dr.async_get(hass)
+    esp_entries = _esphome_entries(hass)
+    out = []
     for device in all_devices(dev_reg):
-        if target in (_norm_name(device.name or ""), _norm_name(device.name_by_user or "")):
-            return device
-    return None
+        esp_entry = _esphome_entry_of(device, esp_entries)
+        if esp_entry is None or not has_component(hass, device):
+            continue
+        out.append({
+            "device": device,
+            "node": esp_entry.data.get("device_name") or device.name or esp_entry.title,
+            "mac": device_mac(device),
+            "name": device.name_by_user or device.name or esp_entry.title,
+        })
+    return out
 
 
 def resolve_entities(hass: HomeAssistant, node_name: str, mac: str | None) -> dict[str, str]:

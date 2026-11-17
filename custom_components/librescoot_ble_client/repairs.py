@@ -24,7 +24,7 @@ from .const import CONF_MAC, CONF_NODE, CONF_SECRET, DOMAIN, ISSUE_RELAY_MISSING
 from homeassistant.helpers.selector import SelectSelector, SelectSelectorConfig, SelectSelectorMode
 
 from . import scooters
-from .helpers import parse_pin, resolve_entities, scan_for_scooters
+from .helpers import component_devices, find_esphome_device, parse_pin, resolve_entities, scan_for_scooters
 from .wizard import MAC_RE
 
 _BACK = "__back__"
@@ -262,6 +262,51 @@ class RelayUrlRepairFlow(RepairsFlow):
         )
 
 
+class EspLinkRepairFlow(RepairsFlow):
+    """Link an entry to an ESPHome device by hand, e.g. after the ESP was renamed or re-flashed."""
+
+    def __init__(self, entry_id: str) -> None:
+        self._entry_id = entry_id
+
+    async def async_step_init(self, user_input: dict | None = None) -> FlowResult:
+        entry = self.hass.config_entries.async_get_entry(self._entry_id)
+        if entry is None:
+            return self.async_abort(reason="esp_not_loaded")
+        devices = {c["device"].id: c for c in component_devices(self.hass)}
+        if not devices:
+            return self.async_abort(reason="no_component_devices")
+        if user_input is not None:
+            picked = devices.get(user_input.get("device"))
+            if picked is None:
+                return self.async_abort(reason="no_component_devices")
+            data = {**entry.data, CONF_NODE: picked["node"], CONF_MAC: picked["mac"]}
+            self.hass.config_entries.async_update_entry(entry, data=data)
+            self.hass.config_entries.async_schedule_reload(entry.entry_id)
+            return self.async_create_entry(title="", data={})
+        # Which device every other entry already uses, so a device is not linked twice by mistake.
+        used = {}
+        for other in self.hass.config_entries.async_entries(DOMAIN):
+            if other.entry_id == entry.entry_id or CONF_NODE not in other.data:
+                continue
+            dev = find_esphome_device(self.hass, other.data[CONF_NODE], other.data.get(CONF_MAC))
+            if dev is not None:
+                used[dev.id] = other.title
+        options = []
+        for dev_id, c in devices.items():
+            label = f"{c['name']} ({c['node']}, {c['mac'] or 'no MAC'})"
+            if dev_id in used:
+                label += f" — used by {used[dev_id]}"
+            options.append({"value": dev_id, "label": label})
+        options.sort(key=lambda o: (" — used by " in o["label"], o["label"].lower()))
+        return self.async_show_form(
+            step_id="init",
+            data_schema=vol.Schema({vol.Required("device", default=options[0]["value"]): SelectSelector(
+                SelectSelectorConfig(options=options, mode=SelectSelectorMode.LIST))}),
+            description_placeholders={"title": entry.title, "node": entry.data.get(CONF_NODE, "—"),
+                                      "mac": entry.data.get(CONF_MAC) or "—"},
+        )
+
+
 class NoScooterRepairFlow(RepairsFlow):
     """Find a scooter for an ESP without one and write its MAC into the ESP's configuration."""
 
@@ -368,6 +413,8 @@ async def async_create_fix_flow(
         return NoScooterRepairFlow(issue_id[len("no_scooter_"):])
     if issue_id.startswith("relay_url_mismatch_"):
         return RelayUrlRepairFlow(issue_id[len("relay_url_mismatch_"):])
+    if issue_id.startswith("esp_not_linked_"):
+        return EspLinkRepairFlow(issue_id[len("esp_not_linked_"):])
     data = dict(data or {})
     if not data.get("node") and "_" in issue_id:
         entry = hass.config_entries.async_get_entry(issue_id.split("_", 1)[1])
