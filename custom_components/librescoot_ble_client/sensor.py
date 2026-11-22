@@ -163,6 +163,8 @@ class GithubRemaining(RelayEntity, SensorEntity):
             "limit": gh.get("limit"),
             "resets_at": datetime.fromtimestamp(reset, timezone.utc).isoformat() if reset else None,
             "token": bool(self._entry.options.get("github_token")),
+            # False: GitHub rejected the token (the value then stays unknown); None: no token set.
+            "token_valid": gh.get("token_valid"),
         }
 
 

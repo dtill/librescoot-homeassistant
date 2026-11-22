@@ -337,9 +337,14 @@ async def _setup_relay(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def _cache(_now=None) -> None:
         await proxy.refresh_cache_size()
 
+    async def _github(_now=None) -> None:
+        await proxy.refresh_github(rs[CONF_GITHUB_TOKEN])
+
     entry.async_on_unload(async_track_time_interval(hass, _tick, timedelta(seconds=STATS_INTERVAL_S)))
     entry.async_on_unload(async_track_time_interval(hass, _cache, timedelta(minutes=1)))
+    entry.async_on_unload(async_track_time_interval(hass, _github, timedelta(minutes=10)))
     hass.async_create_task(_cache())
+    hass.async_create_task(_github())
 
     dr.async_get(hass).async_get_or_create(
         config_entry_id=entry.entry_id,

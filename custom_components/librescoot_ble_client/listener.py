@@ -195,7 +195,39 @@ class OtaProxy:
                 "remaining": remaining,
                 "limit": num("X-RateLimit-Limit"),
                 "reset": num("X-RateLimit-Reset"),
+                "token_valid": self.github.get("token_valid"),  # known only from /rate_limit
             }
+            self._dirty = True
+
+    async def refresh_github(self, token: str | None) -> None:
+        """Read the API limit from GitHub's /rate_limit, which does not count against it. Runs when the
+        relay starts and then periodically, so the sensor is filled right after a restart or a token
+        change instead of waiting hours for the next ESP update check — and a token GitHub rejects
+        shows up at once, not only when an ESP's check fails."""
+        headers = {"Accept": "application/vnd.github+json", "User-Agent": "librescoot-ble-client"}
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        session = async_get_clientsession(self._hass)
+        try:
+            async with session.get("https://api.github.com/rate_limit", headers=headers,
+                                   timeout=ClientTimeout(total=20)) as up:
+                if up.status == 401:
+                    if self.github.get("token_valid") is not False:
+                        _LOGGER.warning("GitHub rejected the relay's token (HTTP 401); the relay's update "
+                                        "checks fail until it is corrected or removed in the relay's options")
+                    self.github = {"remaining": None, "limit": None, "reset": None, "token_valid": False}
+                    self._dirty = True
+                    return
+                if up.status != 200:
+                    _LOGGER.debug("GitHub /rate_limit answered HTTP %s", up.status)
+                    return
+                core = ((await up.json()).get("resources") or {}).get("core") or {}
+        except Exception as err:  # noqa: BLE001 - network trouble only delays the sensor
+            _LOGGER.debug("GitHub /rate_limit not reachable: %s", err)
+            return
+        if isinstance(core.get("remaining"), int):
+            self.github = {"remaining": core["remaining"], "limit": core.get("limit"),
+                           "reset": core.get("reset"), "token_valid": True if token else None}
             self._dirty = True
 
     def get_scan(self, secret: str) -> str:
